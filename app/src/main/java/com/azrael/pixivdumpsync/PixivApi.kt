@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets
 
 class PixivApi(private val context: Context) {
     companion object {
-        const val USER_AGENT = "PixivDumpSync/0.2 (Android; personal-use client)"
+        const val USER_AGENT = "PixivDumpSync/0.3.1 (Android; personal-use client)"
         private const val BASE = "https://www.pixiv.net"
     }
 
@@ -19,7 +19,8 @@ class PixivApi(private val context: Context) {
         val userId: String,
         val title: String,
         val pageCount: Int,
-        val illustType: Int
+        val illustType: Int,
+        val isBookmarked: Boolean
     )
 
     private var csrfToken: String? = null
@@ -60,7 +61,8 @@ class PixivApi(private val context: Context) {
             userId = body.getString("userId"),
             title = body.optString("title", ""),
             pageCount = body.optInt("pageCount", 1),
-            illustType = body.optInt("illustType", 0)
+            illustType = body.optInt("illustType", 0),
+            isBookmarked = !body.isNull("bookmarkData")
         )
     }
 
@@ -74,15 +76,21 @@ class PixivApi(private val context: Context) {
         }
     }
 
-    fun like(id: String) {
+    fun bookmark(id: String) {
         val token = csrfToken ?: fetchCsrfToken().also { csrfToken = it }
-        val payload = JSONObject().put("illust_id", id).toString()
+        val payload = JSONObject()
+            .put("illust_id", id)
+            .put("restrict", 0)
+            .put("comment", "")
+            .put("tags", JSONArray())
+            .toString()
+
         try {
-            postJson("$BASE/ajax/illusts/like", payload, token)
+            postJson("$BASE/ajax/illusts/bookmarks/add", payload, token)
         } catch (e: HttpStatusException) {
             if (e.code == 403) {
                 val fresh = fetchCsrfToken().also { csrfToken = it }
-                postJson("$BASE/ajax/illusts/like", payload, fresh)
+                postJson("$BASE/ajax/illusts/bookmarks/add", payload, fresh)
             } else {
                 throw e
             }
