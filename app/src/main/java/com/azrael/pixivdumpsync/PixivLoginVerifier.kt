@@ -1,14 +1,13 @@
 package com.azrael.pixivdumpsync
 
-import org.json.JSONObject
-
 object PixivLoginVerifier {
+    private val errorPattern = Regex("""["']error["']\s*:\s*(true|false)""", RegexOption.IGNORE_CASE)
+    private val bodyPattern = Regex("""["']body["']\s*:\s*(?!null\b)""", RegexOption.IGNORE_CASE)
+
     fun isAuthenticatedResponse(raw: String): Boolean {
-        return try {
-            val root = JSONObject(raw)
-            !root.optBoolean("error", true) && !root.isNull("body")
-        } catch (_: Throwable) {
-            false
-        }
+        val error = errorPattern.find(raw)?.groupValues?.getOrNull(1)?.lowercase()
+            ?: return false
+        if (error != "false") return false
+        return bodyPattern.containsMatchIn(raw)
     }
 }
