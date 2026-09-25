@@ -38,7 +38,7 @@ class SyncEngine(private val context: Context) {
 
                 for ((workIndex, id) in ids.withIndex()) {
                     stats.worksSeen++
-                    if (db.workState(id) == "DONE") {
+                    if (db.isWorkDoneAndBookmarked(id)) {
                         stats.skippedDone++
                         continue
                     }
@@ -88,9 +88,11 @@ class SyncEngine(private val context: Context) {
                             db.markPageSaved(id, pageIndex, filename)
                         }
 
-                        db.setWorkState(id, "DOWNLOADED_UNLIKED")
-                        api.like(id)
-                        db.setWorkState(id, "DONE", likedMarked = true)
+                        db.setWorkState(id, "DOWNLOADED_UNBOOKMARKED")
+                        if (!detail.isBookmarked) {
+                            api.bookmark(id)
+                        }
+                        db.setWorkState(id, "DONE", bookmarkedMarked = true)
                         stats.worksCompleted++
 
                         Thread.sleep(350L)
