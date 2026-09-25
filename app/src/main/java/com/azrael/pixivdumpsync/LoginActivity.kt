@@ -69,7 +69,6 @@ class LoginActivity : Activity() {
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        webView.settings.databaseEnabled = true
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = WebViewClient()
 
