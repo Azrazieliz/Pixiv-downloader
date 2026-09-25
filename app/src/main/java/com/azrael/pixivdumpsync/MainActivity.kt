@@ -262,7 +262,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(TextView(this).apply {
-            text = "Downloads are stored in Pictures/PixivDump. Works are liked only after all image pages are saved."
+            text = "Downloads are stored in Pictures/PixivDump. Works are bookmarked only after all image pages are saved."
             UiKit.body(this, 12f)
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(24), dp(8), 0)
