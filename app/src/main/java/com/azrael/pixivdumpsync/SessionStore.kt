@@ -5,6 +5,7 @@ import android.content.Context
 object SessionStore {
     private const val PREFS = "pixivdump_prefs"
     private const val COOKIE_KEY = "pixiv_cookie"
+    private const val VERIFIED_KEY = "pixiv_session_verified"
     private const val LAST_SYNC_KEY = "last_sync_summary"
     private const val AUTO_SYNC_KEY = "auto_sync"
 
@@ -21,10 +22,18 @@ object SessionStore {
             .joinToString("; ")
     }
 
-    fun saveCookie(context: Context, value: String) {
+    fun saveCookie(context: Context, value: String, verified: Boolean = false) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(COOKIE_KEY, normalizeCookieInput(value))
+            .putBoolean(VERIFIED_KEY, verified)
+            .apply()
+    }
+
+    fun markVerified(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(VERIFIED_KEY, true)
             .apply()
     }
 
@@ -32,6 +41,7 @@ object SessionStore {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .remove(COOKIE_KEY)
+            .remove(VERIFIED_KEY)
             .apply()
     }
 
@@ -40,8 +50,11 @@ object SessionStore {
             .getString(COOKIE_KEY, null)
             ?.takeIf { it.isNotBlank() }
 
-    fun isLoggedIn(context: Context): Boolean =
-        cookie(context)?.contains("PHPSESSID=") == true
+    fun isLoggedIn(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return prefs.getBoolean(VERIFIED_KEY, false) &&
+            cookie(context)?.contains("PHPSESSID=") == true
+    }
 
     fun setLastSyncSummary(context: Context, value: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
