@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 
 data class ArtistRecord(val userId: String, val label: String?)
 
-class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 1) {
+class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE artists(
                 user_id TEXT PRIMARY KEY,
@@ -21,6 +21,7 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
                 state TEXT NOT NULL,
                 page_count INTEGER NOT NULL DEFAULT 0,
                 liked_marked INTEGER NOT NULL DEFAULT 0,
+                bookmark_marked INTEGER NOT NULL DEFAULT 0,
                 updated_at INTEGER NOT NULL
             )""".trimIndent())
         db.execSQL("""CREATE TABLE pages(
@@ -32,7 +33,13 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
             )""".trimIndent())
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL(
+                "ALTER TABLE works ADD COLUMN bookmark_marked INTEGER NOT NULL DEFAULT 0"
+            )
+        }
+    }
 
     fun addArtist(userId: String, label: String? = null) {
         val values = ContentValues().apply {
@@ -40,7 +47,12 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
             put("label", label)
             put("enabled", 1)
         }
-        writableDatabase.insertWithOnConflict("artists", null, values, SQLiteDatabase.CONFLICT_IGNORE)
+        writableDatabase.insertWithOnConflict(
+            "artists",
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_IGNORE
+        )
     }
 
     fun removeArtist(userId: String) {
@@ -50,22 +62,58 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
     fun listArtists(): List<ArtistRecord> {
         val out = mutableListOf<ArtistRecord>()
         readableDatabase.query(
-            "artists", arrayOf("user_id", "label"), "enabled=1",
-            null, null, null, "user_id ASC"
+            "artists",
+            arrayOf("user_id", "label"),
+            "enabled=1",
+            null,
+            null,
+            null,
+            "user_id ASC"
         ).use { c ->
-            while (c.moveToNext()) out += ArtistRecord(c.getString(0), c.getString(1))
+            while (c.moveToNext()) {
+                out += ArtistRecord(c.getString(0), c.getString(1))
+            }
         }
         return out
     }
 
     fun workState(illustId: String): String? {
         readableDatabase.query(
-            "works", arrayOf("state"), "illust_id=?", arrayOf(illustId),
-            null, null, null
-        ).use { c -> return if (c.moveToFirst()) c.getString(0) else null }
+            "works",
+            arrayOf("state"),
+            "illust_id=?",
+            arrayOf(illustId),
+            null,
+            null,
+            null
+        ).use { c ->
+            return if (c.moveToFirst()) c.getString(0) else null
+        }
     }
 
-    fun upsertWork(illustId: String, artistId: String, title: String?, state: String, pageCount: Int) {
+    fun isWorkDoneAndBookmarked(illustId: String): Boolean {
+        readableDatabase.query(
+            "works",
+            arrayOf("state", "bookmark_marked"),
+            "illust_id=?",
+            arrayOf(illustId),
+            null,
+            null,
+            null
+        ).use { c ->
+            return c.moveToFirst() &&
+                c.getString(0) == "DONE" &&
+                c.getInt(1) == 1
+        }
+    }
+
+    fun upsertWork(
+        illustId: String,
+        artistId: String,
+        title: String?,
+        state: String,
+        pageCount: Int
+    ) {
         val values = ContentValues().apply {
             put("illust_id", illustId)
             put("artist_id", artistId)
@@ -74,32 +122,69 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
             put("page_count", pageCount)
             put("updated_at", System.currentTimeMillis())
         }
-        writableDatabase.insertWithOnConflict("works", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+
+        val updated = writableDatabase.update(
+            "works",
+            values,
+            "illust_id=?",
+            arrayOf(illustId)
+        )
+
+        if (updated == 0) {
+            writableDatabase.insertOrThrow("works", null, values)
+        }
     }
 
-    fun setWorkState(illustId: String, state: String, likedMarked: Boolean? = null) {
+    fun setWorkState(
+        illustId: String,
+        state: String,
+        bookmarkedMarked: Boolean? = null
+    ) {
         val values = ContentValues().apply {
             put("state", state)
             put("updated_at", System.currentTimeMillis())
-            if (likedMarked != null) put("liked_marked", if (likedMarked) 1 else 0)
+            if (bookmarkedMarked != null) {
+                put("bookmark_marked", if (bookmarkedMarked) 1 else 0)
+            }
         }
-        writableDatabase.update("works", values, "illust_id=?", arrayOf(illustId))
+        writableDatabase.update(
+            "works",
+            values,
+            "illust_id=?",
+            arrayOf(illustId)
+        )
     }
 
     fun isPageSaved(illustId: String, pageIndex: Int): Boolean {
         readableDatabase.query(
-            "pages", arrayOf("saved"), "illust_id=? AND page_index=?",
-            arrayOf(illustId, pageIndex.toString()), null, null, null
-        ).use { c -> return c.moveToFirst() && c.getInt(0) == 1 }
+            "pages",
+            arrayOf("saved"),
+            "illust_id=? AND page_index=?",
+            arrayOf(illustId, pageIndex.toString()),
+            null,
+            null,
+            null
+        ).use { c ->
+            return c.moveToFirst() && c.getInt(0) == 1
+        }
     }
 
-    fun markPageSaved(illustId: String, pageIndex: Int, filename: String) {
+    fun markPageSaved(
+        illustId: String,
+        pageIndex: Int,
+        filename: String
+    ) {
         val values = ContentValues().apply {
             put("illust_id", illustId)
             put("page_index", pageIndex)
             put("filename", filename)
             put("saved", 1)
         }
-        writableDatabase.insertWithOnConflict("pages", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        writableDatabase.insertWithOnConflict(
+            "pages",
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_REPLACE
+        )
     }
 }
