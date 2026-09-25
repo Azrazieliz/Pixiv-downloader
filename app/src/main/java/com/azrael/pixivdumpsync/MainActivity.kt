@@ -55,7 +55,7 @@ class MainActivity : Activity() {
         root.addView(authStatus)
 
         root.addView(Button(this).apply {
-            text = "Enter / replace Pixiv cookies"
+            text = "Log in to Pixiv"
             setOnClickListener {
                 startActivity(Intent(this@MainActivity, LoginActivity::class.java))
             }
@@ -97,9 +97,9 @@ class MainActivity : Activity() {
 
     private fun refresh() {
         authStatus.text = if (SessionStore.isLoggedIn(this)) {
-            "Pixiv cookies: ready"
+            "Pixiv login: ready"
         } else {
-            "Pixiv cookies: not set"
+            "Pixiv login: not connected"
         }
 
         syncStatus.text = "Last sync: ${SessionStore.lastSyncSummary(this)}"
@@ -182,7 +182,7 @@ class MainActivity : Activity() {
         if (!SessionStore.isLoggedIn(this)) {
             Toast.makeText(
                 this,
-                "Enter your Pixiv cookies first",
+                "Log in to Pixiv first",
                 Toast.LENGTH_LONG
             ).show()
             return
