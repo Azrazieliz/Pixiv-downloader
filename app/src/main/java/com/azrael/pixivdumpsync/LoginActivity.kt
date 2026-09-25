@@ -1,7 +1,9 @@
 package com.azrael.pixivdumpsync
 
 import android.app.Activity
+import android.graphics.Color
 import android.os.Bundle
+import android.view.Gravity
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
@@ -9,6 +11,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -20,47 +23,182 @@ class LoginActivity : Activity() {
     private var checking = false
     private var verifyWhenPixivLoads = false
 
+    private fun dp(value: Int) = UiKit.dp(this, value)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = UiKit.bg
+        window.navigationBarColor = UiKit.bg
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 16)
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            setBackgroundColor(UiKit.bg)
         }
+
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val close = Button(this).apply {
+            text = "‹"
+            textSize = 28f
+            setTextColor(UiKit.text)
+            background = UiKit.ripple(
+                this@LoginActivity,
+                UiKit.surface,
+                UiKit.surfaceAlt,
+                radius = 14,
+                stroke = UiKit.line
+            )
+            minHeight = dp(46)
+            setPadding(dp(12), 0, dp(12), dp(2))
+            setOnClickListener { finish() }
+        }
+        top.addView(close, LinearLayout.LayoutParams(dp(48), dp(48)))
+
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), 0, 0, 0)
+        }
+        heading.addView(TextView(this).apply {
+            text = "Connect Pixiv"
+            UiKit.title(this, 23f)
+        })
+        heading.addView(TextView(this).apply {
+            text = "Sign in securely inside the app"
+            UiKit.body(this, 13f)
+            setPadding(0, dp(2), 0, 0)
+        })
+        top.addView(
+            heading,
+            LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
+        root.addView(top)
+
+        val statusCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = UiKit.rounded(
+                this@LoginActivity,
+                UiKit.surface,
+                16,
+                UiKit.line
+            )
+        }
+
+        statusCard.addView(TextView(this).apply {
+            text = "LOGIN STATUS"
+            UiKit.sectionLabel(this)
+        })
 
         status = TextView(this).apply {
-            text = "Log in to Pixiv below. When you can see your Pixiv account, tap the button."
-            textSize = 16f
-            setPadding(0, 0, 0, 12)
+            text = "Log in below. When you can see your Pixiv account, tap Verify login."
+            UiKit.body(this, 13.5f)
+            setTextColor(UiKit.text)
+            setPadding(0, dp(7), 0, 0)
         }
-        root.addView(status)
+        statusCard.addView(status)
+
+        root.addView(
+            statusCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(18) }
+        )
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
 
         confirmButton = Button(this).apply {
-            text = "I finished logging in"
+            text = "Verify login"
+            UiKit.stylePrimaryButton(this@LoginActivity, this)
             setOnClickListener { verifyInsideWebView() }
         }
-        root.addView(confirmButton)
+        actions.addView(
+            confirmButton,
+            LinearLayout.LayoutParams(
+                0,
+                dp(54),
+                1f
+            )
+        )
 
-        root.addView(Button(this).apply {
-            text = "Clear saved Pixiv session"
+        val clearButton = Button(this).apply {
+            text = "Clear"
+            UiKit.styleDangerButton(this@LoginActivity, this)
             setOnClickListener {
                 SessionStore.clearCookie(this@LoginActivity)
                 CookieManager.getInstance().removeAllCookies {
                     CookieManager.getInstance().flush()
                     status.text = "Session cleared. Log in to Pixiv below."
+                    status.setTextColor(UiKit.text)
                     webView.loadUrl(LOGIN_URL)
                 }
             }
-        })
+        }
+        actions.addView(
+            clearButton,
+            LinearLayout.LayoutParams(
+                dp(96),
+                dp(54)
+            ).apply { leftMargin = dp(10) }
+        )
 
-        webView = WebView(this)
         root.addView(
+            actions,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(12) }
+        )
+
+        val browserLabel = TextView(this).apply {
+            text = "PIXIV"
+            UiKit.sectionLabel(this)
+        }
+        root.addView(
+            browserLabel,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(20) }
+        )
+
+        val webContainer = FrameLayout(this).apply {
+            setPadding(dp(1), dp(1), dp(1), dp(1))
+            background = UiKit.rounded(
+                this@LoginActivity,
+                UiKit.line,
+                18
+            )
+        }
+
+        webView = WebView(this).apply {
+            setBackgroundColor(Color.WHITE)
+        }
+        webContainer.addView(
             webView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+
+        root.addView(
+            webContainer,
             LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
-            )
+            ).apply { topMargin = dp(10) }
         )
 
         setContentView(root)
@@ -94,7 +232,8 @@ class LoginActivity : Activity() {
 
         checking = true
         confirmButton.isEnabled = false
-        status.text = "Checking your Pixiv login…"
+        status.text = "Checking your Pixiv session…"
+        status.setTextColor(UiKit.muted)
 
         val url = webView.url.orEmpty()
         if (!url.startsWith("https://www.pixiv.net/")) {
@@ -132,7 +271,8 @@ class LoginActivity : Activity() {
             if (!PixivWebLoginResult.isAuthenticated(raw)) {
                 checking = false
                 confirmButton.isEnabled = true
-                status.text = "Pixiv did not confirm the login yet. Stay on Pixiv, then tap the button again."
+                status.text = "Login not confirmed yet. Stay signed in on Pixiv, then tap Verify login again."
+                status.setTextColor(UiKit.danger)
                 Toast.makeText(
                     this,
                     "Login not verified yet",
@@ -156,7 +296,8 @@ class LoginActivity : Activity() {
             if (!session.contains("PHPSESSID=")) {
                 checking = false
                 confirmButton.isEnabled = true
-                status.text = "Pixiv is logged in, but the session cookie was not available yet. Tap the button again."
+                status.text = "Pixiv is signed in, but the session cookie is still loading. Try Verify login once more."
+                status.setTextColor(UiKit.danger)
                 return@runOnUiThread
             }
 
@@ -165,9 +306,10 @@ class LoginActivity : Activity() {
             NetworkCookies.install(this)
 
             checking = false
-            status.text = "Pixiv login verified."
-            Toast.makeText(this, "Pixiv login verified", Toast.LENGTH_SHORT).show()
-            webView.postDelayed({ finish() }, 400L)
+            status.text = "Connected. Pixiv session verified."
+            status.setTextColor(UiKit.success)
+            Toast.makeText(this, "Pixiv connected", Toast.LENGTH_SHORT).show()
+            webView.postDelayed({ finish() }, 450L)
         }
     }
 
