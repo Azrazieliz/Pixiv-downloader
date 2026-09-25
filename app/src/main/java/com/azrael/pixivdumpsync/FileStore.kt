@@ -10,7 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object FileStore {
-    private const val RELATIVE_DIR = "${Environment.DIRECTORY_PICTURES}/PixivDump/"
+    private val RELATIVE_DIR = "${Environment.DIRECTORY_PICTURES}/PixivDump/"
 
     fun exists(context: Context, filename: String): Boolean {
         val projection = arrayOf(MediaStore.Images.Media._ID)
