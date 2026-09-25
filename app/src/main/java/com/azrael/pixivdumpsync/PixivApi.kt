@@ -31,6 +31,15 @@ class PixivApi(private val context: Context) {
         NetworkCookies.install(context)
     }
 
+    fun verifyAuthenticatedSession(): Boolean {
+        return try {
+            val raw = requestText("$BASE/ajax/user/extra?lang=en", "GET", null, null)
+            PixivLoginVerifier.isAuthenticatedResponse(raw)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     fun userArtworkIds(userId: String): List<String> {
         val root = getJson("$BASE/ajax/user/$userId/profile/all?lang=en")
         val body = root.getJSONObject("body")
