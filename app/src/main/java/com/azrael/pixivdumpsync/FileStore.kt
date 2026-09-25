@@ -14,7 +14,8 @@ object FileStore {
 
     fun exists(context: Context, filename: String): Boolean {
         val projection = arrayOf(MediaStore.Images.Media._ID)
-        val selection = "${MediaStore.Images.Media.DISPLAY_NAME}=? AND ${MediaStore.Images.Media.RELATIVE_PATH}=?"
+        val selection =
+            "${MediaStore.Images.Media.DISPLAY_NAME}=? AND ${MediaStore.Images.Media.RELATIVE_PATH}=?"
         context.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             projection,
@@ -24,7 +25,12 @@ object FileStore {
         ).use { c -> return c != null && c.moveToFirst() }
     }
 
-    fun saveImage(context: Context, imageUrl: String, filename: String, session: String?, referer: String) {
+    fun saveImage(
+        context: Context,
+        imageUrl: String,
+        filename: String,
+        referer: String
+    ) {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, filename)
@@ -43,7 +49,6 @@ object FileStore {
                 conn.readTimeout = 90_000
                 conn.setRequestProperty("User-Agent", PixivApi.USER_AGENT)
                 conn.setRequestProperty("Referer", referer)
-                if (!session.isNullOrBlank()) conn.setRequestProperty("Cookie", session)
                 val code = conn.responseCode
                 if (code !in 200..299) {
                     conn.disconnect()
@@ -53,9 +58,12 @@ object FileStore {
                 conn.disconnect()
             } ?: throw IOException("Could not open output for $filename")
 
-            resolver.update(uri, ContentValues().apply {
-                put(MediaStore.Images.Media.IS_PENDING, 0)
-            }, null, null)
+            resolver.update(
+                uri,
+                ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
+                null,
+                null
+            )
         } catch (t: Throwable) {
             resolver.delete(uri, null, null)
             throw t
@@ -71,10 +79,11 @@ object FileStore {
         }
     }
 
-    private fun mimeFor(filename: String): String = when (filename.substringAfterLast('.').lowercase()) {
-        "png" -> "image/png"
-        "gif" -> "image/gif"
-        "webp" -> "image/webp"
-        else -> "image/jpeg"
-    }
+    private fun mimeFor(filename: String): String =
+        when (filename.substringAfterLast('.').lowercase()) {
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            else -> "image/jpeg"
+        }
 }

@@ -47,7 +47,7 @@ class MainActivity : Activity() {
             textSize = 26f
         })
         root.addView(TextView(this).apply {
-            text = "All images go to Pictures/PixivDump. Downloads are resumable and each work is marked only after every page is stored."
+            text = "Everything goes to Pictures/PixivDump. A work is marked as downloaded only after every page is saved, then the app sends the Pixiv Like."
             setPadding(0, 8, 0, 20)
         })
 
@@ -55,8 +55,10 @@ class MainActivity : Activity() {
         root.addView(authStatus)
 
         root.addView(Button(this).apply {
-            text = "Pixiv login"
-            setOnClickListener { startActivity(Intent(this@MainActivity, LoginActivity::class.java)) }
+            text = "Enter / replace Pixiv cookies"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, LoginActivity::class.java))
+            }
         })
 
         root.addView(Button(this).apply {
@@ -72,7 +74,9 @@ class MainActivity : Activity() {
         root.addView(CheckBox(this).apply {
             text = "Automatic sync (about every 15 min; Android may defer it)"
             isChecked = SessionStore.autoSync(this@MainActivity)
-            setOnCheckedChangeListener { _, checked -> Scheduler.setEnabled(this@MainActivity, checked) }
+            setOnCheckedChangeListener { _, checked ->
+                Scheduler.setEnabled(this@MainActivity, checked)
+            }
         })
 
         syncStatus = TextView(this).apply { setPadding(0, 14, 0, 14) }
@@ -83,14 +87,21 @@ class MainActivity : Activity() {
             textSize = 20f
             setPadding(0, 12, 0, 8)
         })
-        artistList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(artistList)
 
+        artistList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        root.addView(artistList)
         setContentView(scroll)
     }
 
     private fun refresh() {
-        authStatus.text = if (SessionStore.isLoggedIn(this)) "Pixiv session: ready" else "Pixiv session: not logged in"
+        authStatus.text = if (SessionStore.isLoggedIn(this)) {
+            "Pixiv cookies: ready"
+        } else {
+            "Pixiv cookies: not set"
+        }
+
         syncStatus.text = "Last sync: ${SessionStore.lastSyncSummary(this)}"
         renderArtists()
     }
@@ -99,22 +110,37 @@ class MainActivity : Activity() {
         artistList.removeAllViews()
         AppDb(this).use { db ->
             val artists = db.listArtists()
+
             if (artists.isEmpty()) {
-                artistList.addView(TextView(this).apply { text = "No users selected yet." })
+                artistList.addView(TextView(this).apply {
+                    text = "No users selected yet."
+                })
                 return
             }
+
             for (artist in artists) {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
                 }
-                row.addView(TextView(this).apply {
-                    text = artist.label ?: "Pixiv user ${artist.userId}"
-                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+                row.addView(
+                    TextView(this).apply {
+                        text = artist.label ?: "Pixiv user ${artist.userId}"
+                    },
+                    LinearLayout.LayoutParams(
+                        0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        1f
+                    )
+                )
+
                 row.addView(Button(this).apply {
                     text = "Remove"
                     setOnClickListener {
-                        AppDb(this@MainActivity).use { it.removeArtist(artist.userId) }
+                        AppDb(this@MainActivity).use {
+                            it.removeArtist(artist.userId)
+                        }
                         renderArtists()
                     }
                 })
@@ -129,14 +155,23 @@ class MainActivity : Activity() {
             gravity = Gravity.TOP
             minLines = 6
         }
+
         AlertDialog.Builder(this)
             .setTitle("Add Pixiv users")
-            .setMessage("Paste IDs or profile URLs separated by spaces, commas, or new lines.")
+            .setMessage(
+                "Paste IDs or profile URLs separated by spaces, commas, or new lines."
+            )
             .setView(input)
             .setPositiveButton("Add") { _, _ ->
                 val ids = InputParser.parseUserIds(input.text.toString())
-                AppDb(this).use { db -> ids.forEach { db.addArtist(it) } }
-                Toast.makeText(this, "Added ${ids.size} user(s)", Toast.LENGTH_SHORT).show()
+                AppDb(this).use { db ->
+                    ids.forEach { db.addArtist(it) }
+                }
+                Toast.makeText(
+                    this,
+                    "Added ${ids.size} user(s)",
+                    Toast.LENGTH_SHORT
+                ).show()
                 renderArtists()
             }
             .setNegativeButton("Cancel", null)
@@ -145,24 +180,46 @@ class MainActivity : Activity() {
 
     private fun startManualSync() {
         if (!SessionStore.isLoggedIn(this)) {
-            Toast.makeText(this, "Log in to Pixiv first", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                this,
+                "Enter your Pixiv cookies first",
+                Toast.LENGTH_LONG
+            ).show()
             return
         }
+
         AppDb(this).use { db ->
             if (db.listArtists().isEmpty()) {
-                Toast.makeText(this, "Add at least one Pixiv user first", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this,
+                    "Add at least one Pixiv user first",
+                    Toast.LENGTH_LONG
+                ).show()
                 return
             }
         }
-        startForegroundService(Intent(this, SyncForegroundService::class.java))
-        Toast.makeText(this, "Sync started. Progress is shown in the notification.", Toast.LENGTH_LONG).show()
+
+        startForegroundService(
+            Intent(this, SyncForegroundService::class.java)
+        )
+
+        Toast.makeText(
+            this,
+            "Sync started. Progress is shown in the notification.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 10)
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                10
+            )
         }
     }
 }
