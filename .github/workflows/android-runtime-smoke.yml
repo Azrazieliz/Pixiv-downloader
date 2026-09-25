@@ -1,4 +1,4 @@
-name: Android Runtime Smoke Test
+name: Android 16 Runtime Smoke Test
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
       - name: Boot emulator and verify launch
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 36
           arch: x86_64
           profile: pixel_6
           disable-animations: true
