@@ -15,7 +15,8 @@ import android.widget.Toast
 class LoginActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var status: TextView
-    private var captured = false
+    private lateinit var confirmButton: Button
+    private var checking = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,24 +27,17 @@ class LoginActivity : Activity() {
         }
 
         status = TextView(this).apply {
-            text = "Log in to Pixiv below. The app will save its own session automatically."
+            text = "Log in to Pixiv below. When you can see your Pixiv account, tap the button."
             textSize = 16f
             setPadding(0, 0, 0, 12)
         }
         root.addView(status)
 
-        root.addView(Button(this).apply {
+        confirmButton = Button(this).apply {
             text = "I finished logging in"
-            setOnClickListener {
-                if (!captureSession()) {
-                    Toast.makeText(
-                        this@LoginActivity,
-                        "No Pixiv login session detected yet.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        })
+            setOnClickListener { verifyAndSaveSession() }
+        }
+        root.addView(confirmButton)
 
         root.addView(Button(this).apply {
             text = "Clear saved Pixiv session"
@@ -51,7 +45,6 @@ class LoginActivity : Activity() {
                 SessionStore.clearCookie(this@LoginActivity)
                 CookieManager.getInstance().removeAllCookies {
                     CookieManager.getInstance().flush()
-                    captured = false
                     status.text = "Session cleared. Log in to Pixiv below."
                     webView.loadUrl(LOGIN_URL)
                 }
@@ -78,30 +71,19 @@ class LoginActivity : Activity() {
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
         webView.webChromeClient = WebChromeClient()
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                captureSession()
-            }
-        }
-
-        if (SessionStore.isLoggedIn(this)) {
-            status.text = "A Pixiv session is already saved. You can close this screen or log in again."
-        }
+        webView.webViewClient = WebViewClient()
 
         webView.loadUrl(LOGIN_URL)
     }
 
-    private fun captureSession(): Boolean {
-        if (captured) return true
+    private fun verifyAndSaveSession() {
+        if (checking) return
 
         val manager = CookieManager.getInstance()
-        val candidates = listOf(
+        val session = listOf(
             manager.getCookie("https://www.pixiv.net"),
             manager.getCookie("https://accounts.pixiv.net")
         )
-
-        val session = candidates
             .filterNotNull()
             .flatMap { it.split(';') }
             .map { it.trim() }
@@ -110,18 +92,53 @@ class LoginActivity : Activity() {
             .joinToString("; ")
 
         if (!session.contains("PHPSESSID=")) {
-            return false
+            Toast.makeText(
+                this,
+                "Pixiv login is not complete yet.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
         }
 
-        manager.flush()
-        SessionStore.saveCookie(this, session)
-        NetworkCookies.install(this)
-        captured = true
+        checking = true
+        confirmButton.isEnabled = false
+        status.text = "Checking your Pixiv login…"
 
-        status.text = "Pixiv login detected. Session saved."
-        Toast.makeText(this, "Pixiv login saved", Toast.LENGTH_SHORT).show()
-        webView.postDelayed({ finish() }, 500L)
-        return true
+        manager.flush()
+        SessionStore.saveCookie(this, session, verified = false)
+        NetworkCookies.install(this)
+
+        Thread {
+            val verified = try {
+                PixivApi(applicationContext).verifyAuthenticatedSession()
+            } catch (_: Throwable) {
+                false
+            }
+
+            runOnUiThread {
+                checking = false
+                confirmButton.isEnabled = true
+
+                if (verified) {
+                    SessionStore.markVerified(this@LoginActivity)
+                    status.text = "Pixiv login verified."
+                    Toast.makeText(
+                        this@LoginActivity,
+                        "Pixiv login verified",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    webView.postDelayed({ finish() }, 400L)
+                } else {
+                    SessionStore.clearCookie(this@LoginActivity)
+                    status.text = "Pixiv did not confirm a logged-in account. Finish logging in, then try again."
+                    Toast.makeText(
+                        this@LoginActivity,
+                        "Login not verified yet",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
     }
 
     override fun onDestroy() {
