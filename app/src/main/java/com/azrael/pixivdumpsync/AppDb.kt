@@ -77,20 +77,6 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
         return out
     }
 
-    fun workState(illustId: String): String? {
-        readableDatabase.query(
-            "works",
-            arrayOf("state"),
-            "illust_id=?",
-            arrayOf(illustId),
-            null,
-            null,
-            null
-        ).use { c ->
-            return if (c.moveToFirst()) c.getString(0) else null
-        }
-    }
-
     fun isWorkDoneAndBookmarked(illustId: String): Boolean {
         readableDatabase.query(
             "works",
@@ -105,6 +91,36 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
                 c.getString(0) == "DONE" &&
                 c.getInt(1) == 1
         }
+    }
+
+    fun workPageCount(illustId: String): Int? {
+        readableDatabase.query(
+            "works",
+            arrayOf("page_count"),
+            "illust_id=?",
+            arrayOf(illustId),
+            null,
+            null,
+            null
+        ).use { c ->
+            return if (c.moveToFirst()) c.getInt(0) else null
+        }
+    }
+
+    fun savedPageFilenames(illustId: String): List<String> {
+        val out = mutableListOf<String>()
+        readableDatabase.query(
+            "pages",
+            arrayOf("filename"),
+            "illust_id=? AND saved=1",
+            arrayOf(illustId),
+            null,
+            null,
+            "page_index ASC"
+        ).use { c ->
+            while (c.moveToNext()) out += c.getString(0)
+        }
+        return out
     }
 
     fun upsertWork(

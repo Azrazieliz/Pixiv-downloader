@@ -3,6 +3,7 @@ package com.azrael.pixivdumpsync
 import android.content.Context
 import java.text.DateFormat
 import java.util.Date
+import java.util.concurrent.atomic.AtomicBoolean
 
 class SyncEngine(private val context: Context) {
     data class Stats(
@@ -15,11 +16,20 @@ class SyncEngine(private val context: Context) {
         var errors: Int = 0
     )
 
+    companion object {
+        private val syncRunning = AtomicBoolean(false)
+    }
+
     fun run(progress: (String) -> Unit = {}): Stats {
+        val stats = Stats()
+        if (!syncRunning.compareAndSet(false, true)) {
+            progress("A sync is already running; this duplicate run was ignored.")
+            return stats
+        }
+
         NetworkCookies.install(context)
         val db = AppDb(context)
         val api = PixivApi(context)
-        val stats = Stats()
 
         try {
             val artists = db.listArtists()
@@ -38,12 +48,14 @@ class SyncEngine(private val context: Context) {
 
                 for ((workIndex, id) in ids.withIndex()) {
                     stats.worksSeen++
-                    if (db.isWorkDoneAndBookmarked(id)) {
+
+                    if (isCompleteOnDisk(db, id)) {
                         stats.skippedDone++
                         continue
                     }
 
                     progress("${artist.userId}: work ${workIndex + 1}/${ids.size} ($id)")
+
                     try {
                         val detail = api.artworkDetail(id)
                         if (detail.userId != artist.userId) continue
@@ -70,12 +82,15 @@ class SyncEngine(private val context: Context) {
                         )
 
                         for ((pageIndex, imageUrl) in urls.withIndex()) {
-                            if (db.isPageSaved(id, pageIndex)) continue
-
                             val ext = FileStore.extensionFromUrl(imageUrl)
                             val filename = "${id}_p${pageIndex}.$ext"
+                            val onDisk = FileStore.exists(context, filename)
 
-                            if (!FileStore.exists(context, filename)) {
+                            if (db.isPageSaved(id, pageIndex) && onDisk) {
+                                continue
+                            }
+
+                            if (!onDisk) {
                                 FileStore.saveImage(
                                     context = context,
                                     imageUrl = imageUrl,
@@ -89,9 +104,11 @@ class SyncEngine(private val context: Context) {
                         }
 
                         db.setWorkState(id, "DOWNLOADED_UNBOOKMARKED")
+
                         if (!detail.isBookmarked) {
                             api.bookmark(id)
                         }
+
                         db.setWorkState(id, "DONE", bookmarkedMarked = true)
                         stats.worksCompleted++
 
@@ -99,6 +116,7 @@ class SyncEngine(private val context: Context) {
                     } catch (t: Throwable) {
                         stats.errors++
                         progress("Error $id: ${t.message}")
+
                         if (t is HttpStatusException && t.code == 429) {
                             progress("Pixiv rate-limited this run; stopping and retrying later.")
                             return finish(stats)
@@ -106,10 +124,24 @@ class SyncEngine(private val context: Context) {
                     }
                 }
             }
+
             return finish(stats)
         } finally {
             db.close()
+            syncRunning.set(false)
         }
+    }
+
+    private fun isCompleteOnDisk(db: AppDb, illustId: String): Boolean {
+        if (!db.isWorkDoneAndBookmarked(illustId)) return false
+
+        val expected = db.workPageCount(illustId) ?: return false
+        if (expected <= 0) return false
+
+        val files = db.savedPageFilenames(illustId)
+        if (files.size != expected) return false
+
+        return files.all { FileStore.exists(context, it) }
     }
 
     private fun finish(stats: Stats): Stats {
@@ -123,6 +155,7 @@ class SyncEngine(private val context: Context) {
             "$stamp — ${stats.worksCompleted} works completed, " +
                 "${stats.pagesDownloaded} images downloaded, ${stats.errors} errors"
         )
+
         return stats
     }
 }

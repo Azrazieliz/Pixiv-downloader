@@ -25,12 +25,15 @@ object FileStore {
         ).use { c -> return c != null && c.moveToFirst() }
     }
 
+    @Synchronized
     fun saveImage(
         context: Context,
         imageUrl: String,
         filename: String,
         referer: String
     ) {
+        if (exists(context, filename)) return
+
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, filename)
@@ -38,6 +41,7 @@ object FileStore {
             put(MediaStore.Images.Media.RELATIVE_PATH, RELATIVE_DIR)
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
+
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             ?: throw IOException("MediaStore insert failed for $filename")
 
@@ -49,18 +53,24 @@ object FileStore {
                 conn.readTimeout = 90_000
                 conn.setRequestProperty("User-Agent", PixivApi.USER_AGENT)
                 conn.setRequestProperty("Referer", referer)
+
                 val code = conn.responseCode
                 if (code !in 200..299) {
                     conn.disconnect()
                     throw IOException("Image HTTP $code")
                 }
-                conn.inputStream.use { input -> input.copyTo(output, 128 * 1024) }
+
+                conn.inputStream.use { input ->
+                    input.copyTo(output, 128 * 1024)
+                }
                 conn.disconnect()
             } ?: throw IOException("Could not open output for $filename")
 
             resolver.update(
                 uri,
-                ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
+                ContentValues().apply {
+                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                },
                 null,
                 null
             )
