@@ -12,6 +12,9 @@ import java.net.URL
 
 object FileStore {
     private val RELATIVE_DIR =
+        "${Environment.DIRECTORY_DOWNLOADS}/Kuroha/"
+
+    private val LEGACY_RELATIVE_DIR =
         "${Environment.DIRECTORY_DOWNLOADS}/PixiFlow/"
 
     private val COLLECTION_URI =
