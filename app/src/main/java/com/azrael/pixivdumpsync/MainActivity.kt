@@ -46,11 +46,22 @@ class MainActivity : Activity() {
     private var enrichStarted = false
     private var importFollowsRunning = false
     private var followingPreviewLoading = false
+    private var visibleArtistLimit = 20
+    private var refreshTick = 0
+    private var lastSyncRunning = false
 
     private val refreshTask = object : Runnable {
         override fun run() {
+            val wasRunning = lastSyncRunning
             updateSyncControls()
-            renderArtists()
+            val running = SyncControl.snapshot().running
+            refreshTick++
+
+            if ((running && refreshTick % 4 == 0) || (wasRunning && !running)) {
+                renderArtists()
+            }
+
+            lastSyncRunning = running
             handler.postDelayed(this, 1500L)
         }
     }
@@ -466,7 +477,9 @@ class MainActivity : Activity() {
         AppDb(this).use { db ->
             val artists = db.listArtists()
             val selected = artists.count { it.selected }
-            artistCount.text = "${artists.size} watched • $selected selected"
+            val shown = artists.take(visibleArtistLimit)
+            artistCount.text =
+                "${artists.size} watched • $selected selected • ${shown.size} shown"
 
             if (artists.isEmpty()) {
                 val empty = card()
@@ -486,7 +499,7 @@ class MainActivity : Activity() {
                 return
             }
 
-            for ((index, artist) in artists.withIndex()) {
+            for ((index, artist) in shown.withIndex()) {
                 val progress = db.artistProgress(artist.userId, artist.knownTotal)
                 artistList.addView(
                     artistCard(db, artist, progress),
@@ -496,6 +509,27 @@ class MainActivity : Activity() {
                     ).apply {
                         if (index > 0) topMargin = dp(9)
                     }
+                )
+            }
+
+            if (shown.size < artists.size) {
+                val remaining = artists.size - shown.size
+                artistList.addView(
+                    Button(this).apply {
+                        text = "Show ${minOf(20, remaining)} more • $remaining remaining"
+                        UiKit.styleSecondaryButton(this@MainActivity, this)
+                        minHeight = dp(46)
+                        setOnClickListener {
+                            visibleArtistLimit += 20
+                            enrichStarted = false
+                            renderArtists()
+                            enrichMissingArtists()
+                        }
+                    },
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        dp(48)
+                    ).apply { topMargin = dp(10) }
                 )
             }
         }
@@ -825,7 +859,7 @@ class MainActivity : Activity() {
             runCatching {
                 AppDb(applicationContext).use { db ->
                     val api = PixivApi(applicationContext)
-                    for (artist in db.listArtists()) {
+                    for (artist in db.listArtists().take(visibleArtistLimit)) {
                         val needsProfile =
                             artist.label.isNullOrBlank() || artist.avatarUrl.isNullOrBlank()
                         val storedPreviews = ArtworkPreviewCodec.decode(artist.previewJson)
@@ -1000,6 +1034,7 @@ class MainActivity : Activity() {
                         importFollowsRunning = false
                         followImportButton.isEnabled = true
                         followImportButton.text = "Import Pixiv follows"
+                        visibleArtistLimit = 20
                         renderArtists()
 
                         if (errorMessage == null) {
