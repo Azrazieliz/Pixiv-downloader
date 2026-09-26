@@ -39,10 +39,13 @@ class MainActivity : Activity() {
     private lateinit var backfillButton: Button
     private lateinit var followingFeedSwitch: Switch
     private lateinit var followImportButton: Button
+    private lateinit var followingPreviewStatus: TextView
+    private lateinit var followingPreviewRow: LinearLayout
 
     private val handler = Handler(Looper.getMainLooper())
     private var enrichStarted = false
     private var importFollowsRunning = false
+    private var followingPreviewLoading = false
 
     private val refreshTask = object : Runnable {
         override fun run() {
@@ -69,6 +72,7 @@ class MainActivity : Activity() {
         handler.removeCallbacks(refreshTask)
         handler.post(refreshTask)
         enrichMissingArtists()
+        refreshFollowingPreview()
     }
 
     override fun onPause() {
@@ -281,6 +285,51 @@ class MainActivity : Activity() {
         syncCard.addView(feedRow)
 
         root.addView(syncCard, cardParams())
+
+        root.addView(section("FOLLOWING"), sectionParams())
+
+        val followingCard = card()
+        val followingHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val followingTitleWrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        followingTitleWrap.addView(TextView(this).apply {
+            text = "Latest from people you follow"
+            UiKit.title(this, 15.5f)
+        })
+        followingPreviewStatus = TextView(this).apply {
+            text = "Loading your Pixiv Following feed…"
+            UiKit.body(this, 11.5f)
+            setPadding(0, dp(3), dp(8), 0)
+        }
+        followingTitleWrap.addView(followingPreviewStatus)
+        followingHeader.addView(
+            followingTitleWrap,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        followingHeader.addView(Button(this).apply {
+            text = "Refresh"
+            UiKit.styleSecondaryButton(this@MainActivity, this)
+            minHeight = dp(38)
+            setPadding(dp(11), 0, dp(11), 0)
+            setOnClickListener { refreshFollowingPreview(force = true) }
+        })
+        followingCard.addView(followingHeader)
+
+        val followingScroller = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        followingPreviewRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(11), 0, 0)
+        }
+        followingScroller.addView(followingPreviewRow)
+        followingCard.addView(followingScroller)
+        root.addView(followingCard, cardParams())
 
         root.addView(section("ARTISTS"), sectionParams())
 
@@ -613,6 +662,19 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
+        if (!artist.lastError.isNullOrBlank()) {
+            bottom.addView(Button(this).apply {
+                text = "Retry"
+                UiKit.styleSecondaryButton(this@MainActivity, this)
+                minHeight = dp(38)
+                setPadding(dp(12), 0, dp(12), 0)
+                setOnClickListener { retryArtist(artist) }
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(40)
+            ).apply { rightMargin = dp(7) })
+        }
+
         bottom.addView(Button(this).apply {
             text = "Remove"
             UiKit.styleDangerButton(this@MainActivity, this)
@@ -808,6 +870,93 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    private fun refreshFollowingPreview(force: Boolean = false) {
+        if (!::followingPreviewRow.isInitialized) return
+
+        val cached = ArtworkPreviewCodec.decode(SessionStore.followingPreviewJson(this))
+        if (cached.isNotEmpty()) {
+            renderFollowingPreview(cached, "Cached latest works • refreshing…")
+        }
+
+        if (!SessionStore.isLoggedIn(this)) {
+            followingPreviewStatus.text = "Connect your Pixiv account to view Following."
+            return
+        }
+        if (followingPreviewLoading) return
+
+        followingPreviewLoading = true
+        Thread {
+            val result = runCatching {
+                PixivApi(applicationContext).followingFeedPage(1).items.take(10)
+            }
+
+            runOnUiThread {
+                followingPreviewLoading = false
+                result.onSuccess { items ->
+                    if (items.isNotEmpty()) {
+                        SessionStore.setFollowingPreviewJson(
+                            this,
+                            ArtworkPreviewCodec.encode(items)
+                        )
+                        renderFollowingPreview(
+                            items,
+                            "Latest Pixiv Following works • ${items.size} shown"
+                        )
+                    } else {
+                        followingPreviewRow.removeAllViews()
+                        followingPreviewStatus.text = "No Following artworks returned."
+                    }
+                }.onFailure { error ->
+                    followingPreviewStatus.text =
+                        if (cached.isNotEmpty()) {
+                            "Showing cached works • refresh failed: ${error.message}"
+                        } else {
+                            "Could not load Following: ${error.message}"
+                        }
+                }
+            }
+        }.start()
+    }
+
+    private fun renderFollowingPreview(
+        items: List<PixivApi.ArtworkPreview>,
+        statusText: String
+    ) {
+        if (!::followingPreviewRow.isInitialized) return
+        followingPreviewRow.removeAllViews()
+        followingPreviewStatus.text = statusText
+
+        for ((index, preview) in items.take(10).withIndex()) {
+            val thumb = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = UiKit.rounded(
+                    this@MainActivity,
+                    UiKit.surfaceAlt,
+                    12,
+                    UiKit.line
+                )
+                clipToOutline = true
+                setImageResource(R.drawable.ic_kuroha)
+                contentDescription = preview.title.ifBlank { "Pixiv artwork ${preview.id}" }
+                setOnClickListener {
+                    openPixivUrl("https://www.pixiv.net/artworks/${preview.id}")
+                }
+            }
+            RemoteImageLoader.load(
+                this,
+                thumb,
+                preview.thumbnailUrl,
+                "https://www.pixiv.net/artworks/${preview.id}"
+            )
+            followingPreviewRow.addView(
+                thumb,
+                LinearLayout.LayoutParams(dp(82), dp(82)).apply {
+                    if (index > 0) leftMargin = dp(7)
+                }
+            )
+        }
+    }
+
     private fun importPixivFollows() {
         if (importFollowsRunning) return
         if (!SessionStore.isLoggedIn(this)) {
@@ -818,7 +967,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Import Pixiv follows?")
             .setMessage(
-                "Kuroha will add the accounts you follow to Watched Artists, including private follows visible to your account. Existing artists will be kept."
+                "Kuroha will add the accounts you follow to Watched Artists. Existing artists are kept. Profiles import first; artwork previews and Live baselines fill in afterward."
             )
             .setPositiveButton("Import") { _, _ ->
                 importFollowsRunning = true
@@ -827,43 +976,24 @@ class MainActivity : Activity() {
 
                 Thread {
                     var imported = 0
-                    var failed = 0
+                    var errorMessage: String? = null
 
                     runCatching {
                         val api = PixivApi(applicationContext)
                         val follows = api.followingUsers()
 
                         AppDb(applicationContext).use { db ->
-                            for ((index, profile) in follows.withIndex()) {
-                                val snapshot = runCatching {
-                                    api.userArtworkSnapshot(
-                                        profile.userId,
-                                        previewLimit = 5,
-                                        resolveMissingPreviews = true
-                                    )
-                                }.getOrNull()
-
-                                runCatching {
-                                    db.addArtist(
-                                        userId = profile.userId,
-                                        label = profile.name,
-                                        liveCursor = snapshot?.ids?.firstOrNull(),
-                                        avatarUrl = profile.imageUrl,
-                                        previewJson = snapshot?.previews
-                                            ?.takeIf { it.isNotEmpty() }
-                                            ?.let { ArtworkPreviewCodec.encode(it) }
-                                    )
-                                }.onSuccess {
-                                    imported++
-                                }.onFailure {
-                                    failed++
-                                }
-
-                                if (index % 5 == 4) Thread.sleep(200L)
+                            for (profile in follows) {
+                                db.addArtist(
+                                    userId = profile.userId,
+                                    label = profile.name,
+                                    avatarUrl = profile.imageUrl
+                                )
+                                imported++
                             }
                         }
                     }.onFailure {
-                        failed++
+                        errorMessage = it.message ?: it.javaClass.simpleName
                     }
 
                     runOnUiThread {
@@ -871,16 +1001,47 @@ class MainActivity : Activity() {
                         followImportButton.isEnabled = true
                         followImportButton.text = "Import Pixiv follows"
                         renderArtists()
-                        Toast.makeText(
-                            this,
-                            "Pixiv follows imported • $imported added/updated • $failed errors",
-                            Toast.LENGTH_LONG
-                        ).show()
+
+                        if (errorMessage == null) {
+                            enrichStarted = false
+                            enrichMissingArtists()
+                            Toast.makeText(
+                                this,
+                                "Imported $imported followed artist(s). Profiles will finish enriching in the background.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            Toast.makeText(
+                                this,
+                                "Import failed: $errorMessage",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
                 }.start()
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun retryArtist(artist: ArtistRecord) {
+        if (SyncControl.snapshot().running) {
+            Toast.makeText(this, "Stop the current sync before retrying.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AppDb(this).use { it.clearArtistError(artist.userId) }
+        val mode = if (
+            artist.archiveStatus == "PARTIAL" ||
+            artist.archiveStatus == "ERROR" ||
+            artist.archiveStatus == "RUNNING"
+        ) {
+            SyncMode.BACKFILL
+        } else {
+            SyncMode.LIVE
+        }
+
+        startSync(mode, artist.userId)
     }
 
     private fun openPixivUrl(url: String) {
@@ -891,21 +1052,25 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun startSync(mode: SyncMode) {
+    private fun startSync(mode: SyncMode, targetArtistId: String? = null) {
         if (!SessionStore.isLoggedIn(this)) {
             Toast.makeText(this, "Connect your Pixiv account first", Toast.LENGTH_LONG).show()
             return
         }
 
         AppDb(this).use { db ->
-            val eligible = if (mode == SyncMode.LIVE) {
+            val eligible = if (targetArtistId != null) {
+                listOfNotNull(db.artist(targetArtistId))
+            } else if (mode == SyncMode.LIVE) {
                 db.listSelectedLiveArtists()
             } else {
                 db.listSelectedArtists()
             }
 
             val feedCanRun =
-                mode == SyncMode.LIVE && SessionStore.followingFeedEnabled(this)
+                targetArtistId == null &&
+                    mode == SyncMode.LIVE &&
+                    SessionStore.followingFeedEnabled(this)
 
             if (eligible.isEmpty() && !feedCanRun) {
                 Toast.makeText(
@@ -924,12 +1089,17 @@ class MainActivity : Activity() {
         val intent = Intent(this, SyncForegroundService::class.java)
             .setAction(SyncForegroundService.ACTION_START)
             .putExtra(SyncForegroundService.EXTRA_MODE, mode.name)
-            .putExtra(SyncForegroundService.EXTRA_SELECTED_ONLY, true)
+            .putExtra(SyncForegroundService.EXTRA_SELECTED_ONLY, targetArtistId == null)
+        if (targetArtistId != null) {
+            intent.putExtra(SyncForegroundService.EXTRA_TARGET_ARTIST_ID, targetArtistId)
+        }
 
         startForegroundService(intent)
         Toast.makeText(
             this,
-            if (mode == SyncMode.LIVE) {
+            if (targetArtistId != null) {
+                "Retry started"
+            } else if (mode == SyncMode.LIVE) {
                 if (SessionStore.followingFeedEnabled(this)) {
                     "Checking your Following feed and selected watched artists"
                 } else {

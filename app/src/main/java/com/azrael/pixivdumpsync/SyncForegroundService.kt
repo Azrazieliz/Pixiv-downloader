@@ -17,6 +17,7 @@ class SyncForegroundService : Service() {
         const val ACTION_STOP = "com.azrael.pixivdumpsync.STOP"
         const val EXTRA_MODE = "sync_mode"
         const val EXTRA_SELECTED_ONLY = "selected_only"
+        const val EXTRA_TARGET_ARTIST_ID = "target_artist_id"
 
         private const val CHANNEL_ID = "kuroha_sync"
         private const val NOTIFICATION_ID = 41
@@ -58,6 +59,7 @@ class SyncForegroundService : Service() {
             SyncMode.valueOf(intent?.getStringExtra(EXTRA_MODE) ?: SyncMode.LIVE.name)
         }.getOrDefault(SyncMode.LIVE)
         val selectedOnly = intent?.getBooleanExtra(EXTRA_SELECTED_ONLY, false) ?: false
+        val targetArtistId = intent?.getStringExtra(EXTRA_TARGET_ARTIST_ID)
 
         startForeground(NOTIFICATION_ID, notification())
 
@@ -65,7 +67,8 @@ class SyncForegroundService : Service() {
             try {
                 SyncEngine(applicationContext).run(
                     mode = mode,
-                    selectedOnly = selectedOnly
+                    selectedOnly = selectedOnly,
+                    targetArtistId = targetArtistId
                 ) {
                     updateNotification()
                 }

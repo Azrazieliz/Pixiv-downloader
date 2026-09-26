@@ -240,6 +240,27 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
     fun listSelectedLiveArtists(): List<ArtistRecord> =
         listArtistsWhere("enabled=1 AND selected=1 AND live_enabled=1")
 
+    fun artist(userId: String): ArtistRecord? =
+        listArtists().firstOrNull { it.userId == userId }
+
+    fun clearArtistError(userId: String) {
+        writableDatabase.update(
+            "artists",
+            ContentValues().apply { putNull("last_error") },
+            "user_id=?",
+            arrayOf(userId)
+        )
+    }
+
+    fun clearTransientNetworkErrors() {
+        writableDatabase.execSQL(
+            """UPDATE artists SET last_error=NULL
+               WHERE last_error LIKE '%Unable to resolve host%'
+                  OR last_error LIKE '%Network is unreachable%'
+                  OR last_error LIKE '%failed to connect%'"""
+        )
+    }
+
     private fun listArtistsWhere(selection: String): List<ArtistRecord> {
         val out = mutableListOf<ArtistRecord>()
         readableDatabase.query(

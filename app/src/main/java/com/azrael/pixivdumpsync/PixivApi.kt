@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets
 
 class PixivApi(private val context: Context) {
     companion object {
-        const val USER_AGENT = "Kuroha/0.5.1 (Android; personal-use client)"
+        const val USER_AGENT = "Kuroha/0.5.2 (Android; personal-use client)"
         private const val BASE = "https://www.pixiv.net"
     }
 
@@ -136,47 +136,58 @@ class PixivApi(private val context: Context) {
     fun followingUsers(): List<UserProfile> {
         val ownId = currentUserId()
         val result = linkedMapOf<String, UserProfile>()
+        var publicSucceeded = false
+        var publicFailure: Throwable? = null
 
         for (rest in listOf("show", "hide")) {
-            var offset = 0
-            val limit = 100
+            try {
+                var offset = 0
+                val limit = 24
 
-            while (true) {
-                val root = getJson(
-                    "$BASE/ajax/user/$ownId/following?offset=$offset&limit=$limit&rest=$rest&lang=en"
-                )
-                val body = root.getJSONObject("body")
-                val users = body.optJSONArray("users") ?: JSONArray()
-
-                for (i in 0 until users.length()) {
-                    val user = users.optJSONObject(i) ?: continue
-                    val id = user.optString("userId", "")
-                    if (id.isBlank()) continue
-                    result[id] = UserProfile(
-                        userId = id,
-                        name = firstNonBlank(
-                            user.optString("userName", ""),
-                            user.optString("name", ""),
-                            "Pixiv user $id"
-                        ) ?: "Pixiv user $id",
-                        imageUrl = firstNonBlank(
-                            user.optString("profileImageUrl", ""),
-                            user.optString("imageBig", ""),
-                            user.optString("image", "")
-                        )
+                while (true) {
+                    val root = getJson(
+                        "$BASE/ajax/user/$ownId/following?offset=$offset&limit=$limit&rest=$rest&lang=en"
                     )
-                }
+                    val body = root.getJSONObject("body")
+                    val users = body.optJSONArray("users") ?: JSONArray()
+                    if (rest == "show") publicSucceeded = true
 
-                if (users.length() < limit) break
-                offset += limit
-                Thread.sleep(160L)
+                    for (i in 0 until users.length()) {
+                        val user = users.optJSONObject(i) ?: continue
+                        val id = user.optString("userId", "")
+                        if (id.isBlank()) continue
+                        result[id] = UserProfile(
+                            userId = id,
+                            name = firstNonBlank(
+                                user.optString("userName", ""),
+                                user.optString("name", ""),
+                                "Pixiv user $id"
+                            ) ?: "Pixiv user $id",
+                            imageUrl = firstNonBlank(
+                                user.optString("profileImageUrl", ""),
+                                user.optString("imageBig", ""),
+                                user.optString("image", "")
+                            )
+                        )
+                    }
+
+                    val total = body.optInt("total", offset + users.length())
+                    offset += users.length()
+                    if (users.length() == 0 || offset >= total) break
+                    Thread.sleep(120L)
+                }
+            } catch (t: Throwable) {
+                if (rest == "show") publicFailure = t
             }
         }
 
+        if (!publicSucceeded && publicFailure != null) throw publicFailure
         return result.values.toList()
     }
 
     fun currentUserId(): String {
+        SessionStore.pixivUserIdFromCookie(context)?.let { return it }
+
         val root = getJson("$BASE/ajax/settings/self?lang=en")
         val body = root.optJSONObject("body") ?: throw IOException("Pixiv account data unavailable.")
         return findString(body, "userId")
@@ -330,32 +341,41 @@ class PixivApi(private val context: Context) {
         csrf: String?
     ): String {
         val conn = URL(urlString).openConnection() as HttpURLConnection
-        conn.requestMethod = method
-        conn.instanceFollowRedirects = true
-        conn.connectTimeout = 20_000
-        conn.readTimeout = 45_000
-        conn.setRequestProperty("User-Agent", USER_AGENT)
-        conn.setRequestProperty("Accept", "application/json,text/html;q=0.9,*/*;q=0.8")
-        conn.setRequestProperty("Accept-Language", "en-US,en;q=0.8")
-        conn.setRequestProperty("Referer", "$BASE/")
-        if (!csrf.isNullOrBlank()) conn.setRequestProperty("X-CSRF-TOKEN", csrf)
+        NetworkRequestRegistry.register(conn)
+        try {
+            conn.requestMethod = method
+            conn.instanceFollowRedirects = true
+            conn.connectTimeout = 12_000
+            conn.readTimeout = 30_000
+            conn.setRequestProperty("User-Agent", USER_AGENT)
+            conn.setRequestProperty("Accept", "application/json,text/html;q=0.9,*/*;q=0.8")
+            conn.setRequestProperty("Accept-Language", "en-US,en;q=0.8")
+            conn.setRequestProperty("Referer", "$BASE/")
+            if (!csrf.isNullOrBlank()) conn.setRequestProperty("X-CSRF-TOKEN", csrf)
 
-        if (body != null) {
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
+            if (body != null) {
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                conn.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
+            }
+
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val responseText = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+
+            if (code !in 200..299) {
+                throw HttpStatusException(code, "HTTP $code from Pixiv: " + responseText.take(240))
+            }
+            return responseText
+        } catch (t: Throwable) {
+            if (SyncControl.isStopping()) throw SyncCancelledException()
+            throw t
+        } finally {
+            NetworkRequestRegistry.unregister(conn)
+            runCatching { conn.disconnect() }
         }
-
-        val code = conn.responseCode
-        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        val responseText = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
-        conn.disconnect()
-
-        if (code !in 200..299) {
-            throw HttpStatusException(code, "HTTP $code from Pixiv: ${responseText.take(240)}")
-        }
-        return responseText
     }
+
 }
 
 class HttpStatusException(val code: Int, message: String) : IOException(message)

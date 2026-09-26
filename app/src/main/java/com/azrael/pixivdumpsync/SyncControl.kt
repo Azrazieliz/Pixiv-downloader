@@ -97,14 +97,19 @@ object SyncControl {
         }
     }
 
-    fun stop() = synchronized(lock) {
-        if (active) {
-            stopRequested = true
-            pendingLive = false
-            paused = false
-            message = "Stopping safely…"
+    fun stop() {
+        synchronized(lock) {
+            if (active) {
+                stopRequested = true
+                pendingLive = false
+                paused = false
+                message = "Stopping…"
+            }
         }
+        NetworkRequestRegistry.cancelAll()
     }
+
+    fun isStopping(): Boolean = stopRequested
 
     fun updateMessage(value: String) {
         if (active) message = value

@@ -63,22 +63,35 @@ object FileStore {
         try {
             resolver.openOutputStream(uri, "w")?.use { output ->
                 val conn = URL(imageUrl).openConnection() as HttpURLConnection
-                conn.instanceFollowRedirects = true
-                conn.connectTimeout = 20_000
-                conn.readTimeout = 90_000
-                conn.setRequestProperty("User-Agent", PixivApi.USER_AGENT)
-                conn.setRequestProperty("Referer", referer)
+                NetworkRequestRegistry.register(conn)
+                try {
+                    conn.instanceFollowRedirects = true
+                    conn.connectTimeout = 12_000
+                    conn.readTimeout = 45_000
+                    conn.setRequestProperty("User-Agent", PixivApi.USER_AGENT)
+                    conn.setRequestProperty("Referer", referer)
 
-                val code = conn.responseCode
-                if (code !in 200..299) {
-                    conn.disconnect()
-                    throw IOException("Image HTTP $code")
-                }
+                    val code = conn.responseCode
+                    if (code !in 200..299) {
+                        throw IOException("Image HTTP $code")
+                    }
 
-                conn.inputStream.use { input ->
-                    input.copyTo(output, 128 * 1024)
+                    conn.inputStream.use { input ->
+                        val buffer = ByteArray(128 * 1024)
+                        while (true) {
+                            if (SyncControl.isStopping()) throw SyncCancelledException()
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                } catch (t: Throwable) {
+                    if (SyncControl.isStopping()) throw SyncCancelledException()
+                    throw t
+                } finally {
+                    NetworkRequestRegistry.unregister(conn)
+                    runCatching { conn.disconnect() }
                 }
-                conn.disconnect()
             } ?: throw IOException("Could not open output for $filename")
 
             resolver.update(

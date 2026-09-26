@@ -1,6 +1,7 @@
 package com.azrael.pixivdumpsync
 
 import android.content.Context
+import java.net.UnknownHostException
 import java.text.DateFormat
 import java.util.Date
 
@@ -24,6 +25,7 @@ class SyncEngine(private val context: Context) {
     fun run(
         mode: SyncMode,
         selectedOnly: Boolean = false,
+        targetArtistId: String? = null,
         progress: (String) -> Unit = {}
     ): Stats {
         val stats = Stats()
@@ -42,6 +44,7 @@ class SyncEngine(private val context: Context) {
 
         NetworkCookies.install(context)
         val db = AppDb(context)
+        db.clearTransientNetworkErrors()
         val api = PixivApi(context)
         var finalMessage = "Idle"
         var released = false
@@ -52,12 +55,14 @@ class SyncEngine(private val context: Context) {
                     db = db,
                     api = api,
                     selectedOnly = selectedOnly,
+                    targetArtistId = targetArtistId,
                     stats = stats,
                     progress = progress
                 )
                 SyncMode.BACKFILL -> runBackfillPass(
                     db = db,
                     api = api,
+                    targetArtistId = targetArtistId,
                     stats = stats,
                     progress = progress
                 )
@@ -78,6 +83,7 @@ class SyncEngine(private val context: Context) {
                     db = db,
                     api = api,
                     selectedOnly = false,
+                    targetArtistId = null,
                     stats = stats,
                     progress = progress
                 )
@@ -98,20 +104,23 @@ class SyncEngine(private val context: Context) {
         db: AppDb,
         api: PixivApi,
         selectedOnly: Boolean,
+        targetArtistId: String?,
         stats: Stats,
         progress: (String) -> Unit
     ) {
         SyncControl.setMode(SyncMode.LIVE)
 
-        if (SessionStore.followingFeedEnabled(context)) {
+        if (targetArtistId == null && SessionStore.followingFeedEnabled(context)) {
             val feedMessage = "Following feed • checking newest works"
             SyncControl.updateMessage(feedMessage)
             progress(feedMessage)
             try {
                 syncFollowingFeed(db, api, stats, progress)
             } catch (t: Throwable) {
+                if (SyncControl.isStopping()) return
                 stats.errors++
                 progress("Following feed error: ${t.message}")
+                if (isGlobalNetworkError(t)) return
                 if (t is HttpStatusException && t.code == 429) {
                     progress("Pixiv rate-limited this run; it will retry later.")
                     return
@@ -119,10 +128,10 @@ class SyncEngine(private val context: Context) {
             }
         }
 
-        val artists = if (selectedOnly) {
-            db.listSelectedLiveArtists()
-        } else {
-            db.listLiveArtists()
+        val artists = when {
+            targetArtistId != null -> listOfNotNull(db.artist(targetArtistId))
+            selectedOnly -> db.listSelectedLiveArtists()
+            else -> db.listLiveArtists()
         }
 
         stats.artists = maxOf(stats.artists, artists.size)
@@ -140,6 +149,7 @@ class SyncEngine(private val context: Context) {
             try {
                 syncLiveArtist(db, api, artist, stats, progress)
             } catch (t: Throwable) {
+                if (SyncControl.isStopping()) return
                 stats.errors++
                 db.setArtistError(
                     artist.userId,
@@ -147,6 +157,7 @@ class SyncEngine(private val context: Context) {
                 )
                 progress("Error for $name: ${t.message}")
 
+                if (isGlobalNetworkError(t)) return
                 if (t is HttpStatusException && t.code == 429) {
                     progress("Pixiv rate-limited this run; it will retry later.")
                     return
@@ -215,6 +226,7 @@ class SyncEngine(private val context: Context) {
                     WorkResult.STOPPED -> return
                 }
             } catch (t: Throwable) {
+                if (SyncControl.isStopping()) return
                 hadError = true
                 stats.errors++
                 progress("Following feed error ${item.id}: ${t.message}")
@@ -230,12 +242,17 @@ class SyncEngine(private val context: Context) {
     private fun runBackfillPass(
         db: AppDb,
         api: PixivApi,
+        targetArtistId: String?,
         stats: Stats,
         progress: (String) -> Unit
     ) {
         SyncControl.setMode(SyncMode.BACKFILL)
 
-        val artists = db.listSelectedArtists()
+        val artists = if (targetArtistId != null) {
+            listOfNotNull(db.artist(targetArtistId))
+        } else {
+            db.listSelectedArtists()
+        }
         stats.artists = maxOf(stats.artists, artists.size)
 
         for ((artistIndex, artist) in artists.withIndex()) {
@@ -251,6 +268,7 @@ class SyncEngine(private val context: Context) {
             try {
                 syncBackfillArtist(db, api, artist, stats, progress)
             } catch (t: Throwable) {
+                if (SyncControl.isStopping()) return
                 stats.errors++
                 db.setArtistError(
                     artist.userId,
@@ -258,6 +276,7 @@ class SyncEngine(private val context: Context) {
                 )
                 progress("Error for $name: ${t.message}")
 
+                if (isGlobalNetworkError(t)) return
                 if (t is HttpStatusException && t.code == 429) {
                     progress("Pixiv rate-limited this run; it will retry later.")
                     return
@@ -282,6 +301,7 @@ class SyncEngine(private val context: Context) {
                 db = db,
                 api = api,
                 selectedOnly = false,
+                targetArtistId = null,
                 stats = stats,
                 progress = progress
             )
@@ -378,6 +398,7 @@ class SyncEngine(private val context: Context) {
                     WorkResult.STOPPED -> return
                 }
             } catch (t: Throwable) {
+                if (SyncControl.isStopping()) return
                 db.setArtistError(
                     artist.userId,
                     t.message ?: "Unknown error"
@@ -478,6 +499,10 @@ class SyncEngine(private val context: Context) {
                     }
                 }
             } catch (t: Throwable) {
+                if (SyncControl.isStopping()) {
+                    db.setArchiveMeta(artist.userId, "PARTIAL", ids.size, null)
+                    return
+                }
                 stats.errors++
                 artistErrors++
                 db.setArtistError(
@@ -653,6 +678,15 @@ class SyncEngine(private val context: Context) {
         )
 
         return stats
+    }
+
+    private fun isGlobalNetworkError(t: Throwable): Boolean {
+        var current: Throwable? = t
+        while (current != null) {
+            if (current is UnknownHostException) return true
+            current = current.cause
+        }
+        return t.message?.contains("Unable to resolve host", ignoreCase = true) == true
     }
 
     private fun modeLabel(mode: SyncMode): String =

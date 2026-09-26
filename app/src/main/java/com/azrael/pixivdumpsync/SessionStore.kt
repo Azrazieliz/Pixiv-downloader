@@ -10,6 +10,7 @@ object SessionStore {
     private const val AUTO_SYNC_KEY = "auto_sync"
     private const val FOLLOWING_FEED_ENABLED_KEY = "following_feed_enabled"
     private const val FOLLOWING_FEED_CURSOR_KEY = "following_feed_cursor"
+    private const val FOLLOWING_PREVIEW_KEY = "following_preview_json"
 
     fun normalizeCookieInput(raw: String): String {
         var value = raw.trim()
@@ -59,6 +60,18 @@ object SessionStore {
             cookie(context)?.contains("PHPSESSID=") == true
     }
 
+    fun pixivUserIdFromCookie(context: Context): String? {
+        val session = cookie(context)
+            ?.split(';')
+            ?.map { it.trim() }
+            ?.firstOrNull { it.startsWith("PHPSESSID=") }
+            ?.substringAfter('=')
+            ?: return null
+
+        return session.substringBefore('_')
+            .takeIf { it.isNotBlank() && it.all(Char::isDigit) }
+    }
+
     fun setLastSyncSummary(context: Context, value: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(LAST_SYNC_KEY, value).apply()
@@ -96,5 +109,17 @@ object SessionStore {
     fun followingFeedCursor(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(FOLLOWING_FEED_CURSOR_KEY, null)
+            ?.takeIf { it.isNotBlank() }
+
+    fun setFollowingPreviewJson(context: Context, value: String?) {
+        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        if (value.isNullOrBlank()) editor.remove(FOLLOWING_PREVIEW_KEY)
+        else editor.putString(FOLLOWING_PREVIEW_KEY, value)
+        editor.apply()
+    }
+
+    fun followingPreviewJson(context: Context): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(FOLLOWING_PREVIEW_KEY, null)
             ?.takeIf { it.isNotBlank() }
 }
