@@ -10,9 +10,15 @@ import java.nio.charset.StandardCharsets
 
 class PixivApi(private val context: Context) {
     companion object {
-        const val USER_AGENT = "PixivDumpSync/0.3.1 (Android; personal-use client)"
+        const val USER_AGENT = "PixiFlow/0.4.0 (Android; personal-use client)"
         private const val BASE = "https://www.pixiv.net"
     }
+
+    data class UserProfile(
+        val userId: String,
+        val name: String,
+        val imageUrl: String?
+    )
 
     data class ArtworkDetail(
         val id: String,
@@ -27,18 +33,20 @@ class PixivApi(private val context: Context) {
 
     init {
         if (!SessionStore.isLoggedIn(context)) {
-            throw IOException("Pixiv cookies are not set.")
+            throw IOException("Pixiv session is not connected.")
         }
         NetworkCookies.install(context)
     }
 
-    fun verifyAuthenticatedSession(): Boolean {
-        return try {
-            val raw = requestText("$BASE/ajax/user/extra?lang=en", "GET", null, null)
-            PixivLoginVerifier.isAuthenticatedResponse(raw)
-        } catch (_: Throwable) {
-            false
-        }
+    fun userProfile(userId: String): UserProfile {
+        val root = getJson("$BASE/ajax/user/$userId?full=1&lang=en")
+        val body = root.getJSONObject("body")
+        return UserProfile(
+            userId = body.optString("userId", userId),
+            name = body.optString("name", "Pixiv user $userId"),
+            imageUrl = body.optString("imageBig", body.optString("image", ""))
+                .takeIf { it.isNotBlank() }
+        )
     }
 
     fun userArtworkIds(userId: String): List<String> {
@@ -100,7 +108,7 @@ class PixivApi(private val context: Context) {
     private fun fetchCsrfToken(): String {
         val html = requestText("$BASE/", "GET", null, null)
         return PixivCsrf.extract(html)
-            ?: throw IOException("Could not read Pixiv CSRF token. Replace your cookies and try again.")
+            ?: throw IOException("Could not read Pixiv CSRF token. Reconnect Pixiv and try again.")
     }
 
     private fun getJson(url: String): JSONObject {
@@ -144,13 +152,13 @@ class PixivApi(private val context: Context) {
 
         val code = conn.responseCode
         val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        val text = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
+        val responseText = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
         conn.disconnect()
 
         if (code !in 200..299) {
-            throw HttpStatusException(code, "HTTP $code from Pixiv: ${text.take(240)}")
+            throw HttpStatusException(code, "HTTP $code from Pixiv: ${responseText.take(240)}")
         }
-        return text
+        return responseText
     }
 }
 

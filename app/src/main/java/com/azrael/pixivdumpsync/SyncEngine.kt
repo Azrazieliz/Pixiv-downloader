@@ -3,7 +3,6 @@ package com.azrael.pixivdumpsync
 import android.content.Context
 import java.text.DateFormat
 import java.util.Date
-import java.util.concurrent.atomic.AtomicBoolean
 
 class SyncEngine(private val context: Context) {
     data class Stats(
@@ -16,120 +15,273 @@ class SyncEngine(private val context: Context) {
         var errors: Int = 0
     )
 
-    companion object {
-        private val syncRunning = AtomicBoolean(false)
+    private enum class WorkResult {
+        DONE,
+        SKIPPED,
+        STOPPED
     }
 
-    fun run(progress: (String) -> Unit = {}): Stats {
+    fun run(
+        mode: SyncMode,
+        selectedOnly: Boolean = false,
+        progress: (String) -> Unit = {}
+    ): Stats {
         val stats = Stats()
-        if (!syncRunning.compareAndSet(false, true)) {
-            progress("A sync is already running; this duplicate run was ignored.")
+        if (!SyncControl.tryStart(mode)) {
+            progress("Another sync is already running.")
             return stats
         }
 
         NetworkCookies.install(context)
         val db = AppDb(context)
         val api = PixivApi(context)
+        var finalMessage = "Idle"
 
         try {
-            val artists = db.listArtists()
+            val artists = when (mode) {
+                SyncMode.LIVE -> {
+                    if (selectedOnly) db.listSelectedLiveArtists() else db.listLiveArtists()
+                }
+                SyncMode.BACKFILL -> db.listSelectedArtists()
+            }
+
             stats.artists = artists.size
 
             for ((artistIndex, artist) in artists.withIndex()) {
-                progress("Artist ${artistIndex + 1}/${artists.size}: ${artist.userId}")
+                if (!SyncControl.checkpoint()) break
 
-                val ids = try {
-                    api.userArtworkIds(artist.userId)
+                val name = artist.label ?: "Pixiv user ${artist.userId}"
+                val message = "${modeLabel(mode)} • ${artistIndex + 1}/${artists.size} • $name"
+                SyncControl.updateMessage(message)
+                progress(message)
+
+                try {
+                    when (mode) {
+                        SyncMode.LIVE -> syncLiveArtist(db, api, artist, stats, progress)
+                        SyncMode.BACKFILL -> syncBackfillArtist(db, api, artist, stats, progress)
+                    }
                 } catch (t: Throwable) {
                     stats.errors++
-                    progress("Failed artist ${artist.userId}: ${t.message}")
-                    continue
-                }
-
-                for ((workIndex, id) in ids.withIndex()) {
-                    stats.worksSeen++
-
-                    if (isCompleteOnDisk(db, id)) {
-                        stats.skippedDone++
-                        continue
-                    }
-
-                    progress("${artist.userId}: work ${workIndex + 1}/${ids.size} ($id)")
-
-                    try {
-                        val detail = api.artworkDetail(id)
-                        if (detail.userId != artist.userId) continue
-
-                        if (detail.illustType == 2) {
-                            db.upsertWork(
-                                id,
-                                artist.userId,
-                                detail.title,
-                                "SKIPPED_UGOIRA",
-                                0
-                            )
-                            stats.skippedUgoira++
-                            continue
-                        }
-
-                        val urls = api.pageOriginalUrls(id)
-                        db.upsertWork(
-                            id,
-                            artist.userId,
-                            detail.title,
-                            "DOWNLOADING",
-                            urls.size
-                        )
-
-                        for ((pageIndex, imageUrl) in urls.withIndex()) {
-                            val ext = FileStore.extensionFromUrl(imageUrl)
-                            val filename = "${id}_p${pageIndex}.$ext"
-                            val onDisk = FileStore.exists(context, filename)
-
-                            if (db.isPageSaved(id, pageIndex) && onDisk) {
-                                continue
-                            }
-
-                            if (!onDisk) {
-                                FileStore.saveImage(
-                                    context = context,
-                                    imageUrl = imageUrl,
-                                    filename = filename,
-                                    referer = "https://www.pixiv.net/artworks/$id"
-                                )
-                                stats.pagesDownloaded++
-                            }
-
-                            db.markPageSaved(id, pageIndex, filename)
-                        }
-
-                        db.setWorkState(id, "DOWNLOADED_UNBOOKMARKED")
-
-                        if (!detail.isBookmarked) {
-                            api.bookmark(id)
-                        }
-
-                        db.setWorkState(id, "DONE", bookmarkedMarked = true)
-                        stats.worksCompleted++
-
-                        Thread.sleep(350L)
-                    } catch (t: Throwable) {
-                        stats.errors++
-                        progress("Error $id: ${t.message}")
-
-                        if (t is HttpStatusException && t.code == 429) {
-                            progress("Pixiv rate-limited this run; stopping and retrying later.")
-                            return finish(stats)
-                        }
+                    db.setArtistError(artist.userId, t.message ?: "Unknown error")
+                    progress("Error for $name: ${t.message}")
+                    if (t is HttpStatusException && t.code == 429) {
+                        progress("Pixiv rate-limited this run; it will retry later.")
+                        break
                     }
                 }
             }
 
-            return finish(stats)
+            finalMessage = if (SyncControl.snapshot().stopping) {
+                "Stopped safely"
+            } else {
+                "${modeLabel(mode)} complete"
+            }
+            return finish(stats, mode)
         } finally {
             db.close()
-            syncRunning.set(false)
+            SyncControl.finish(finalMessage)
         }
+    }
+
+    private fun syncLiveArtist(
+        db: AppDb,
+        api: PixivApi,
+        artist: ArtistRecord,
+        stats: Stats,
+        progress: (String) -> Unit
+    ) {
+        val ids = api.userArtworkIds(artist.userId)
+        val newest = ids.firstOrNull()
+
+        if (artist.liveCursor.isNullOrBlank()) {
+            db.setLiveCursor(artist.userId, newest)
+            db.markArtistChecked(artist.userId)
+            progress(
+                if (newest == null) {
+                    "${artist.label ?: artist.userId}: live watch ready; no illustrations yet."
+                } else {
+                    "${artist.label ?: artist.userId}: live watch baseline established."
+                }
+            )
+            return
+        }
+
+        val newIds = LiveCursorLogic.processingOrder(ids, artist.liveCursor)
+        if (newIds.isEmpty()) {
+            db.markArtistChecked(artist.userId)
+            progress("${artist.label ?: artist.userId}: no new illustrations.")
+            return
+        }
+
+        for ((index, id) in newIds.withIndex()) {
+            if (!SyncControl.checkpoint()) return
+
+            stats.worksSeen++
+            val message =
+                "Live • ${artist.label ?: artist.userId} • ${index + 1}/${newIds.size}"
+            SyncControl.updateMessage(message)
+            progress(message)
+
+            try {
+                if (isCompleteOnDisk(db, id)) {
+                    stats.skippedDone++
+                    db.setLiveCursor(artist.userId, id)
+                    continue
+                }
+
+                when (syncWork(db, api, artist, id, stats)) {
+                    WorkResult.DONE, WorkResult.SKIPPED -> {
+                        db.setLiveCursor(artist.userId, id)
+                        db.setArtistError(artist.userId, null)
+                    }
+                    WorkResult.STOPPED -> return
+                }
+            } catch (t: Throwable) {
+                db.setArtistError(artist.userId, t.message ?: "Unknown error")
+                stats.errors++
+                if (t is HttpStatusException && t.code == 429) throw t
+                return
+            }
+        }
+
+        db.markArtistChecked(artist.userId)
+    }
+
+    private fun syncBackfillArtist(
+        db: AppDb,
+        api: PixivApi,
+        artist: ArtistRecord,
+        stats: Stats,
+        progress: (String) -> Unit
+    ) {
+        val ids = api.userArtworkIds(artist.userId)
+        db.setArchiveMeta(
+            artist.userId,
+            status = "RUNNING",
+            knownTotal = ids.size,
+            error = null
+        )
+
+        var artistErrors = 0
+
+        for ((index, id) in ids.withIndex()) {
+            if (!SyncControl.checkpoint()) {
+                db.setArchiveMeta(artist.userId, "PARTIAL", ids.size, null)
+                return
+            }
+
+            stats.worksSeen++
+            val message =
+                "Backfill • ${artist.label ?: artist.userId} • ${index + 1}/${ids.size}"
+            SyncControl.updateMessage(message)
+            progress(message)
+
+            if (isCompleteOnDisk(db, id)) {
+                stats.skippedDone++
+                continue
+            }
+
+            try {
+                when (syncWork(db, api, artist, id, stats)) {
+                    WorkResult.DONE, WorkResult.SKIPPED -> Unit
+                    WorkResult.STOPPED -> {
+                        db.setArchiveMeta(artist.userId, "PARTIAL", ids.size, null)
+                        return
+                    }
+                }
+            } catch (t: Throwable) {
+                stats.errors++
+                artistErrors++
+                db.setArtistError(artist.userId, t.message ?: "Unknown error")
+                progress("Error $id: ${t.message}")
+                if (t is HttpStatusException && t.code == 429) throw t
+            }
+        }
+
+        val p = db.artistProgress(artist.userId, ids.size)
+        val complete = p.done + p.skipped >= ids.size
+        val status = when {
+            complete -> "COMPLETE"
+            artistErrors > 0 && p.done == 0 -> "ERROR"
+            else -> "PARTIAL"
+        }
+
+        db.setArchiveMeta(
+            artist.userId,
+            status = status,
+            knownTotal = ids.size,
+            error = if (complete) null else artist.lastError
+        )
+    }
+
+    private fun syncWork(
+        db: AppDb,
+        api: PixivApi,
+        artist: ArtistRecord,
+        id: String,
+        stats: Stats
+    ): WorkResult {
+        if (!SyncControl.checkpoint()) return WorkResult.STOPPED
+
+        val detail = api.artworkDetail(id)
+        if (detail.userId != artist.userId) return WorkResult.SKIPPED
+
+        if (detail.illustType == 2) {
+            db.upsertWork(
+                id,
+                artist.userId,
+                detail.title,
+                "SKIPPED_UGOIRA",
+                0
+            )
+            stats.skippedUgoira++
+            return WorkResult.SKIPPED
+        }
+
+        val urls = api.pageOriginalUrls(id)
+        db.upsertWork(
+            id,
+            artist.userId,
+            detail.title,
+            "DOWNLOADING",
+            urls.size
+        )
+
+        for ((pageIndex, imageUrl) in urls.withIndex()) {
+            if (!SyncControl.checkpoint()) return WorkResult.STOPPED
+
+            val ext = FileStore.extensionFromUrl(imageUrl)
+            val filename = "${id}_p${pageIndex}.$ext"
+            val onDisk = FileStore.exists(context, filename)
+
+            if (db.isPageSaved(id, pageIndex) && onDisk) continue
+
+            if (!onDisk) {
+                FileStore.saveImage(
+                    context = context,
+                    imageUrl = imageUrl,
+                    filename = filename,
+                    referer = "https://www.pixiv.net/artworks/$id"
+                )
+                stats.pagesDownloaded++
+            }
+
+            db.markPageSaved(id, pageIndex, filename)
+        }
+
+        if (!SyncControl.checkpoint()) return WorkResult.STOPPED
+
+        db.setWorkState(id, "DOWNLOADED_UNBOOKMARKED")
+
+        if (!detail.isBookmarked) {
+            api.bookmark(id)
+        }
+
+        db.setWorkState(id, "DONE", bookmarkedMarked = true)
+        stats.worksCompleted++
+
+        Thread.sleep(350L)
+        return WorkResult.DONE
     }
 
     private fun isCompleteOnDisk(db: AppDb, illustId: String): Boolean {
@@ -144,18 +296,20 @@ class SyncEngine(private val context: Context) {
         return files.all { FileStore.exists(context, it) }
     }
 
-    private fun finish(stats: Stats): Stats {
+    private fun finish(stats: Stats, mode: SyncMode): Stats {
         val stamp = DateFormat.getDateTimeInstance(
             DateFormat.SHORT,
             DateFormat.SHORT
         ).format(Date())
 
-        SessionStore.setLastSyncSummary(
-            context,
-            "$stamp — ${stats.worksCompleted} works completed, " +
-                "${stats.pagesDownloaded} images downloaded, ${stats.errors} errors"
-        )
+        val summary =
+            "$stamp — ${modeLabel(mode)}: ${stats.worksCompleted} completed, " +
+                "${stats.pagesDownloaded} images, ${stats.errors} errors"
 
+        SessionStore.setLastSyncSummary(context, summary)
         return stats
     }
+
+    private fun modeLabel(mode: SyncMode): String =
+        if (mode == SyncMode.LIVE) "Live sync" else "Archive backfill"
 }

@@ -11,23 +11,21 @@ object Scheduler {
 
     fun ensure(context: Context) {
         val scheduler = context.getSystemService(JobScheduler::class.java)
-        if (!SessionStore.autoSync(context)) {
-            scheduler.cancel(JOB_ID)
-            return
-        }
         if (scheduler.allPendingJobs.any { it.id == JOB_ID }) return
 
-        val job = JobInfo.Builder(JOB_ID, ComponentName(context, SyncJobService::class.java))
+        val job = JobInfo.Builder(
+            JOB_ID,
+            ComponentName(context, SyncJobService::class.java)
+        )
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setPersisted(true)
             .setPeriodic(FIFTEEN_MINUTES)
             .build()
+
         scheduler.schedule(job)
     }
 
-    fun setEnabled(context: Context, enabled: Boolean) {
-        SessionStore.setAutoSync(context, enabled)
-        val scheduler = context.getSystemService(JobScheduler::class.java)
-        if (!enabled) scheduler.cancel(JOB_ID) else ensure(context)
+    fun cancel(context: Context) {
+        context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
     }
 }
