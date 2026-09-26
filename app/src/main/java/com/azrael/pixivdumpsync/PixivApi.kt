@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets
 
 class PixivApi(private val context: Context) {
     companion object {
-        const val USER_AGENT = "PixiFlow/0.4.0 (Android; personal-use client)"
+        const val USER_AGENT = "PixiFlow/0.4.2 (Android; personal-use client)"
         private const val BASE = "https://www.pixiv.net"
     }
 

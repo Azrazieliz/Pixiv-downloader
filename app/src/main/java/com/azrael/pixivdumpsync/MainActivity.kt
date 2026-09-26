@@ -304,7 +304,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(TextView(this).apply {
-            text = "Files stay in Pictures/PixivDump. Completed works are bookmarked on Pixiv only after every image page exists locally."
+            text = "Files are saved in Downloads/PixiFlow. Completed works are bookmarked on Pixiv only after every image page exists locally."
             UiKit.body(this, 11.5f)
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(24), dp(8), 0)

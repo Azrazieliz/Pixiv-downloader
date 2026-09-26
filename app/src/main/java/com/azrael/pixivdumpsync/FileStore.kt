@@ -4,25 +4,34 @@ import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
+import android.provider.BaseColumns
 import android.provider.MediaStore
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
 object FileStore {
-    private val RELATIVE_DIR = "${Environment.DIRECTORY_PICTURES}/PixivDump/"
+    private val RELATIVE_DIR =
+        "${Environment.DIRECTORY_DOWNLOADS}/PixiFlow/"
+
+    private val COLLECTION_URI =
+        MediaStore.Downloads.EXTERNAL_CONTENT_URI
 
     fun exists(context: Context, filename: String): Boolean {
-        val projection = arrayOf(MediaStore.Images.Media._ID)
+        val projection = arrayOf(BaseColumns._ID)
         val selection =
-            "${MediaStore.Images.Media.DISPLAY_NAME}=? AND ${MediaStore.Images.Media.RELATIVE_PATH}=?"
+            "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND " +
+                "${MediaStore.MediaColumns.RELATIVE_PATH}=?"
+
         context.contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            COLLECTION_URI,
             projection,
             selection,
             arrayOf(filename, RELATIVE_DIR),
             null
-        ).use { c -> return c != null && c.moveToFirst() }
+        ).use { c ->
+            return c != null && c.moveToFirst()
+        }
     }
 
     @Synchronized
@@ -36,13 +45,13 @@ object FileStore {
 
         val resolver = context.contentResolver
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, filename)
-            put(MediaStore.Images.Media.MIME_TYPE, mimeFor(filename))
-            put(MediaStore.Images.Media.RELATIVE_PATH, RELATIVE_DIR)
-            put(MediaStore.Images.Media.IS_PENDING, 1)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeFor(filename))
+            put(MediaStore.MediaColumns.RELATIVE_PATH, RELATIVE_DIR)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
 
-        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        val uri = resolver.insert(COLLECTION_URI, values)
             ?: throw IOException("MediaStore insert failed for $filename")
 
         try {
@@ -69,7 +78,7 @@ object FileStore {
             resolver.update(
                 uri,
                 ContentValues().apply {
-                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                    put(MediaStore.MediaColumns.IS_PENDING, 0)
                 },
                 null,
                 null
