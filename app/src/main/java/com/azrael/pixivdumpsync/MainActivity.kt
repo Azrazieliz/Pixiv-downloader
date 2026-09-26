@@ -333,7 +333,7 @@ class MainActivity : Activity() {
         runStatus.text = when {
             s.stopping -> "Stopping safely…"
             s.paused -> "Paused • ${modeName(s.mode)}"
-            s.running -> s.message
+            s.running -> if (s.pendingLive) "${s.message} • Live check queued" else s.message
             else -> "No sync running"
         }
 
