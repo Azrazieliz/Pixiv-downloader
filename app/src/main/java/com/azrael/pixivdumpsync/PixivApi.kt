@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets
 
 class PixivApi(private val context: Context) {
     companion object {
-        const val USER_AGENT = "Kuroha/0.5.0 (Android; personal-use client)"
+        const val USER_AGENT = "Kuroha/0.5.1 (Android; personal-use client)"
         private const val BASE = "https://www.pixiv.net"
     }
 
@@ -96,20 +96,12 @@ class PixivApi(private val context: Context) {
             .mapNotNull { previewsById[it] }
 
         if (resolveMissingPreviews && previews.any { it.thumbnailUrl.isNullOrBlank() }) {
+            val hydrated = runCatching {
+                artworkPreviews(userId, previews.map { it.id }).associateBy { it.id }
+            }.getOrDefault(emptyMap())
+
             previews = previews.map { preview ->
-                if (!preview.thumbnailUrl.isNullOrBlank()) {
-                    preview
-                } else {
-                    runCatching {
-                        val detail = artworkDetail(preview.id)
-                        ArtworkPreview(
-                            id = detail.id,
-                            userId = detail.userId,
-                            title = detail.title,
-                            thumbnailUrl = detail.thumbnailUrl
-                        )
-                    }.getOrDefault(preview)
-                }
+                hydrated[preview.id] ?: preview
             }
         }
 
@@ -240,6 +232,28 @@ class PixivApi(private val context: Context) {
                 throw e
             }
         }
+    }
+
+    private fun artworkPreviews(
+        userId: String,
+        ids: List<String>
+    ): List<ArtworkPreview> {
+        if (ids.isEmpty()) return emptyList()
+
+        val idQuery = ids.distinct().joinToString("&") { "ids%5B%5D=$it" }
+        val root = getJson(
+            "$BASE/ajax/user/$userId/profile/illusts?" +
+                "$idQuery&work_category=illustManga&is_first_page=1&lang=en"
+        )
+        val body = root.optJSONObject("body") ?: return emptyList()
+        val works = body.optJSONObject("works") ?: body
+        val out = mutableListOf<ArtworkPreview>()
+
+        for (id in ids) {
+            val item = works.optJSONObject(id) ?: continue
+            out += artworkPreview(id, item, userId)
+        }
+        return out
     }
 
     private fun artworkPreview(

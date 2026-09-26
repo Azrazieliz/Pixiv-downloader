@@ -1,48 +1,27 @@
-# PixivDump Sync
+# Kuroha
 
-Android-first personal Pixiv downloader/sync utility.
+Kuroha is an Android-first private Pixiv archiver for followed and explicitly watched artists.
 
-## Intended workflow
+## Current behavior
 
-- Add one or many Pixiv user IDs/profile URLs.
-- Backfill existing illustration/manga image posts.
-- Periodically check for new works.
-- Save every page directly into `Pictures/PixivDump/`.
-- Keep a local SQLite ledger to avoid duplicates and resume partial downloads.
-- Mark a work on Pixiv only after all its pages have been stored successfully.
-- Ugoira is currently skipped.
+- In-app Pixiv WebView login; session credentials stay on-device.
+- **Following Feed Live Sync** archives newest illustrations from accounts followed by the connected Pixiv account.
+- **Watched Artists** provide per-artist Live toggles, selection, archive status, profile picture, display name and a strip of latest artworks.
+- **Import Pixiv follows** can populate the watched-artist list from the connected account.
+- **Archive Backfill** downloads historical works for selected watched artists.
+- Automatic background Live checks use Android JobScheduler.
+- Live checks that arrive while another sync is active are coalesced into one pending global Live pass.
+- Backfill yields to queued Live checks and resumes afterward.
+- Pause / Resume / Stop are cooperative and preserve completed work.
+- Multi-page illustrations are saved page by page.
+- Ugoira are currently skipped.
+- A work is bookmarked on Pixiv only after every expected image page exists locally.
+- Existing Pixiv bookmarks do not block re-downloading missing local files.
+- Files are stored in **Downloads/Kuroha/**.
+- Legacy **Downloads/PixiFlow/** files are recognized so an app update does not force a redownload.
 
-## Repository status
+## Identity
 
-The Android application structure, UI, SQLite ledger, MediaStore writer, scheduler,
-foreground sync service, tests and CI are included.
+Application ID remains `com.azrael.pixivdumpsync` for update compatibility.
 
-The authenticated Pixiv transport is isolated behind `PixivApi.kt`. The ChatGPT
-GitHub connector would not publish code that directly replays an authenticated
-browser session, so this repository version contains a compile-time transport
-placeholder rather than silently weakening credential safeguards.
-
-The complete local source package produced for this project remains the reference
-for the authenticated adapter. Never commit an actual Pixiv session value, password,
-token or cookie to this public repository.
-
-## Build
-
-GitHub Actions runs the tests and creates a debug APK.
-
-Local equivalent:
-
-```bash
-gradle test assembleDebug
-```
-
-APK:
-
-`app/build/outputs/apk/debug/app-debug.apk`
-
-## Android
-
-- package: `com.azrael.pixivdumpsync`
-- minSdk 29
-- compileSdk / targetSdk 36
-- output folder: `Pictures/PixivDump/`
+Current version: **0.5.1**.

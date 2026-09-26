@@ -10,7 +10,7 @@
     <application
         android:allowBackup="false"
         android:icon="@drawable/ic_kuroha"
-        android:roundIcon="@drawable/ic_pixiflow"
+        android:roundIcon="@drawable/ic_kuroha"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">

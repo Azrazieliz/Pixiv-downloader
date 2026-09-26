@@ -302,12 +302,12 @@ class SyncEngine(private val context: Context) {
         val snapshot = api.userArtworkSnapshot(
             artist.userId,
             previewLimit = 5,
-            resolveMissingPreviews = false
+            resolveMissingPreviews = true
         )
         val ids = snapshot.ids
         val newest = ids.firstOrNull()
 
-        if (snapshot.previews.isNotEmpty()) {
+        if (snapshot.previews.any { !it.thumbnailUrl.isNullOrBlank() }) {
             db.updateArtistPresentation(
                 artist.userId,
                 previewJson = ArtworkPreviewCodec.encode(snapshot.previews)
@@ -329,6 +329,23 @@ class SyncEngine(private val context: Context) {
         }
 
         val newIds = LiveCursorLogic.processingOrder(ids, artist.liveCursor)
+
+        if (newIds.isNotEmpty()) {
+            val refreshedPreviews = runCatching {
+                api.userArtworkSnapshot(
+                    artist.userId,
+                    previewLimit = 5,
+                    resolveMissingPreviews = true
+                ).previews
+            }.getOrDefault(emptyList())
+
+            if (refreshedPreviews.any { !it.thumbnailUrl.isNullOrBlank() }) {
+                db.updateArtistPresentation(
+                    artist.userId,
+                    previewJson = ArtworkPreviewCodec.encode(refreshedPreviews)
+                )
+            }
+        }
 
         if (newIds.isEmpty()) {
             db.markArtistChecked(artist.userId)

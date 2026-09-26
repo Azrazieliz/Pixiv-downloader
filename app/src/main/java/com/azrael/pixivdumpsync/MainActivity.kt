@@ -766,8 +766,11 @@ class MainActivity : Activity() {
                     for (artist in db.listArtists()) {
                         val needsProfile =
                             artist.label.isNullOrBlank() || artist.avatarUrl.isNullOrBlank()
+                        val storedPreviews = ArtworkPreviewCodec.decode(artist.previewJson)
                         val needsArtwork =
-                            artist.liveCursor.isNullOrBlank() || artist.previewJson.isNullOrBlank()
+                            artist.liveCursor.isNullOrBlank() ||
+                                artist.previewJson.isNullOrBlank() ||
+                                storedPreviews.none { !it.thumbnailUrl.isNullOrBlank() }
 
                         if (needsProfile || needsArtwork) {
                             val profile = if (needsProfile) {
