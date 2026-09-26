@@ -8,6 +8,8 @@ import android.database.sqlite.SQLiteOpenHelper
 data class ArtistRecord(
     val userId: String,
     val label: String?,
+    val avatarUrl: String?,
+    val previewJson: String?,
     val selected: Boolean,
     val liveEnabled: Boolean,
     val liveCursor: String?,
@@ -27,7 +29,7 @@ data class ArtistProgress(
         get() = (knownTotal - done - skipped).coerceAtLeast(0)
 }
 
-class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 3) {
+class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 4) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE artists(
                 user_id TEXT PRIMARY KEY,
@@ -39,7 +41,9 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
                 archive_status TEXT NOT NULL DEFAULT 'NOT_STARTED',
                 known_total INTEGER NOT NULL DEFAULT 0,
                 last_sync_at INTEGER,
-                last_error TEXT
+                last_error TEXT,
+                avatar_url TEXT,
+                preview_json TEXT
             )""".trimIndent())
         db.execSQL("""CREATE TABLE works(
                 illust_id TEXT PRIMARY KEY,
@@ -77,9 +81,19 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
             db.execSQL("ALTER TABLE artists ADD COLUMN last_sync_at INTEGER")
             db.execSQL("ALTER TABLE artists ADD COLUMN last_error TEXT")
         }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE artists ADD COLUMN avatar_url TEXT")
+            db.execSQL("ALTER TABLE artists ADD COLUMN preview_json TEXT")
+        }
     }
 
-    fun addArtist(userId: String, label: String? = null, liveCursor: String? = null) {
+    fun addArtist(
+        userId: String,
+        label: String? = null,
+        liveCursor: String? = null,
+        avatarUrl: String? = null,
+        previewJson: String? = null
+    ) {
         val values = ContentValues().apply {
             put("user_id", userId)
             put("label", label)
@@ -89,6 +103,8 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
             put("live_cursor", liveCursor)
             put("archive_status", "NOT_STARTED")
             put("known_total", 0)
+            put("avatar_url", avatarUrl)
+            put("preview_json", previewJson)
         }
         writableDatabase.insertWithOnConflict(
             "artists",
@@ -96,13 +112,40 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
             values,
             SQLiteDatabase.CONFLICT_IGNORE
         )
-        updateArtistIdentity(userId, label, liveCursor)
+        updateArtistIdentity(
+            userId = userId,
+            label = label,
+            liveCursor = liveCursor,
+            avatarUrl = avatarUrl,
+            previewJson = previewJson
+        )
     }
 
-    fun updateArtistIdentity(userId: String, label: String?, liveCursor: String? = null) {
+    fun updateArtistIdentity(
+        userId: String,
+        label: String?,
+        liveCursor: String? = null,
+        avatarUrl: String? = null,
+        previewJson: String? = null
+    ) {
         val values = ContentValues()
         if (!label.isNullOrBlank()) values.put("label", label)
         if (!liveCursor.isNullOrBlank()) values.put("live_cursor", liveCursor)
+        if (!avatarUrl.isNullOrBlank()) values.put("avatar_url", avatarUrl)
+        if (!previewJson.isNullOrBlank()) values.put("preview_json", previewJson)
+        if (values.size() > 0) {
+            writableDatabase.update("artists", values, "user_id=?", arrayOf(userId))
+        }
+    }
+
+    fun updateArtistPresentation(
+        userId: String,
+        avatarUrl: String? = null,
+        previewJson: String? = null
+    ) {
+        val values = ContentValues()
+        if (!avatarUrl.isNullOrBlank()) values.put("avatar_url", avatarUrl)
+        if (!previewJson.isNullOrBlank()) values.put("preview_json", previewJson)
         if (values.size() > 0) {
             writableDatabase.update("artists", values, "user_id=?", arrayOf(userId))
         }
@@ -202,7 +245,8 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
         readableDatabase.query(
             "artists",
             arrayOf(
-                "user_id", "label", "selected", "live_enabled", "live_cursor",
+                "user_id", "label", "avatar_url", "preview_json",
+                "selected", "live_enabled", "live_cursor",
                 "archive_status", "known_total", "last_sync_at", "last_error"
             ),
             selection,
@@ -215,13 +259,15 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
                 out += ArtistRecord(
                     userId = c.getString(0),
                     label = c.getString(1),
-                    selected = c.getInt(2) == 1,
-                    liveEnabled = c.getInt(3) == 1,
-                    liveCursor = c.getString(4),
-                    archiveStatus = c.getString(5) ?: "NOT_STARTED",
-                    knownTotal = c.getInt(6),
-                    lastSyncAt = if (c.isNull(7)) null else c.getLong(7),
-                    lastError = c.getString(8)
+                    avatarUrl = c.getString(2),
+                    previewJson = c.getString(3),
+                    selected = c.getInt(4) == 1,
+                    liveEnabled = c.getInt(5) == 1,
+                    liveCursor = c.getString(6),
+                    archiveStatus = c.getString(7) ?: "NOT_STARTED",
+                    knownTotal = c.getInt(8),
+                    lastSyncAt = if (c.isNull(9)) null else c.getLong(9),
+                    lastError = c.getString(10)
                 )
             }
         }

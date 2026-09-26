@@ -23,15 +23,18 @@ object FileStore {
             "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND " +
                 "${MediaStore.MediaColumns.RELATIVE_PATH}=?"
 
-        context.contentResolver.query(
-            COLLECTION_URI,
-            projection,
-            selection,
-            arrayOf(filename, RELATIVE_DIR),
-            null
-        ).use { c ->
-            return c != null && c.moveToFirst()
+        for (relativeDir in listOf(RELATIVE_DIR, LEGACY_RELATIVE_DIR)) {
+            context.contentResolver.query(
+                COLLECTION_URI,
+                projection,
+                selection,
+                arrayOf(filename, relativeDir),
+                null
+            ).use { c ->
+                if (c != null && c.moveToFirst()) return true
+            }
         }
+        return false
     }
 
     @Synchronized

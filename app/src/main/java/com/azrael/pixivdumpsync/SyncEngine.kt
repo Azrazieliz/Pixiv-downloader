@@ -103,6 +103,22 @@ class SyncEngine(private val context: Context) {
     ) {
         SyncControl.setMode(SyncMode.LIVE)
 
+        if (SessionStore.followingFeedEnabled(context)) {
+            val feedMessage = "Following feed • checking newest works"
+            SyncControl.updateMessage(feedMessage)
+            progress(feedMessage)
+            try {
+                syncFollowingFeed(db, api, stats, progress)
+            } catch (t: Throwable) {
+                stats.errors++
+                progress("Following feed error: ${t.message}")
+                if (t is HttpStatusException && t.code == 429) {
+                    progress("Pixiv rate-limited this run; it will retry later.")
+                    return
+                }
+            }
+        }
+
         val artists = if (selectedOnly) {
             db.listSelectedLiveArtists()
         } else {
@@ -136,6 +152,78 @@ class SyncEngine(private val context: Context) {
                     return
                 }
             }
+        }
+    }
+
+    private fun syncFollowingFeed(
+        db: AppDb,
+        api: PixivApi,
+        stats: Stats,
+        progress: (String) -> Unit
+    ) {
+        val cursor = SessionStore.followingFeedCursor(context)
+        val allItems = mutableListOf<PixivApi.ArtworkPreview>()
+        var newestId: String? = null
+        val maxPages = if (cursor.isNullOrBlank()) 1 else 10
+
+        for (pageNumber in 1..maxPages) {
+            if (!SyncControl.checkpoint()) return
+
+            val page = api.followingFeedPage(pageNumber)
+            if (newestId == null) newestId = page.items.firstOrNull()?.id
+            allItems += page.items.filter { candidate ->
+                allItems.none { it.id == candidate.id }
+            }
+
+            if (!cursor.isNullOrBlank() && page.items.any { it.id == cursor }) {
+                break
+            }
+            if (page.isLastPage || page.items.isEmpty()) break
+        }
+
+        val newItems = if (cursor.isNullOrBlank()) {
+            allItems
+        } else {
+            allItems.takeWhile { it.id != cursor }
+        }
+
+        if (newItems.isEmpty()) {
+            if (cursor.isNullOrBlank() && newestId != null) {
+                SessionStore.setFollowingFeedCursor(context, newestId)
+            }
+            progress("Following feed • no new works")
+            return
+        }
+
+        var hadError = false
+        for ((index, item) in newItems.asReversed().withIndex()) {
+            if (!SyncControl.checkpoint()) return
+
+            stats.worksSeen++
+            val message = "Following feed • ${index + 1}/${newItems.size}"
+            SyncControl.updateMessage(message)
+            progress(message)
+
+            if (isCompleteOnDisk(db, item.id)) {
+                stats.skippedDone++
+                continue
+            }
+
+            try {
+                when (syncWork(db, api, item.userId, item.id, stats)) {
+                    WorkResult.DONE, WorkResult.SKIPPED -> Unit
+                    WorkResult.STOPPED -> return
+                }
+            } catch (t: Throwable) {
+                hadError = true
+                stats.errors++
+                progress("Following feed error ${item.id}: ${t.message}")
+                if (t is HttpStatusException && t.code == 429) throw t
+            }
+        }
+
+        if (!hadError && newestId != null) {
+            SessionStore.setFollowingFeedCursor(context, newestId)
         }
     }
 
@@ -211,8 +299,20 @@ class SyncEngine(private val context: Context) {
         stats: Stats,
         progress: (String) -> Unit
     ) {
-        val ids = api.userArtworkIds(artist.userId)
+        val snapshot = api.userArtworkSnapshot(
+            artist.userId,
+            previewLimit = 5,
+            resolveMissingPreviews = false
+        )
+        val ids = snapshot.ids
         val newest = ids.firstOrNull()
+
+        if (snapshot.previews.isNotEmpty()) {
+            db.updateArtistPresentation(
+                artist.userId,
+                previewJson = ArtworkPreviewCodec.encode(snapshot.previews)
+            )
+        }
 
         if (artist.liveCursor.isNullOrBlank()) {
             db.setLiveCursor(artist.userId, newest)
@@ -253,7 +353,7 @@ class SyncEngine(private val context: Context) {
                     continue
                 }
 
-                when (syncWork(db, api, artist, id, stats)) {
+                when (syncWork(db, api, artist.userId, id, stats)) {
                     WorkResult.DONE, WorkResult.SKIPPED -> {
                         db.setLiveCursor(artist.userId, id)
                         db.setArtistError(artist.userId, null)
@@ -284,7 +384,19 @@ class SyncEngine(private val context: Context) {
         stats: Stats,
         progress: (String) -> Unit
     ) {
-        val ids = api.userArtworkIds(artist.userId)
+        val snapshot = api.userArtworkSnapshot(
+            artist.userId,
+            previewLimit = 5,
+            resolveMissingPreviews = false
+        )
+        val ids = snapshot.ids
+
+        if (snapshot.previews.isNotEmpty()) {
+            db.updateArtistPresentation(
+                artist.userId,
+                previewJson = ArtworkPreviewCodec.encode(snapshot.previews)
+            )
+        }
 
         db.setArchiveMeta(
             artist.userId,
@@ -336,7 +448,7 @@ class SyncEngine(private val context: Context) {
             }
 
             try {
-                when (syncWork(db, api, artist, id, stats)) {
+                when (syncWork(db, api, artist.userId, id, stats)) {
                     WorkResult.DONE, WorkResult.SKIPPED -> Unit
                     WorkResult.STOPPED -> {
                         db.setArchiveMeta(
@@ -383,7 +495,7 @@ class SyncEngine(private val context: Context) {
     private fun syncWork(
         db: AppDb,
         api: PixivApi,
-        artist: ArtistRecord,
+        expectedArtistId: String,
         id: String,
         stats: Stats
     ): WorkResult {
@@ -393,14 +505,14 @@ class SyncEngine(private val context: Context) {
 
         val detail = api.artworkDetail(id)
 
-        if (detail.userId != artist.userId) {
+        if (detail.userId != expectedArtistId) {
             return WorkResult.SKIPPED
         }
 
         if (detail.illustType == 2) {
             db.upsertWork(
                 id,
-                artist.userId,
+                expectedArtistId,
                 detail.title,
                 "SKIPPED_UGOIRA",
                 0
@@ -413,7 +525,7 @@ class SyncEngine(private val context: Context) {
 
         db.upsertWork(
             id,
-            artist.userId,
+            expectedArtistId,
             detail.title,
             "DOWNLOADING",
             urls.size

@@ -18,7 +18,7 @@ class SyncForegroundService : Service() {
         const val EXTRA_MODE = "sync_mode"
         const val EXTRA_SELECTED_ONLY = "selected_only"
 
-        private const val CHANNEL_ID = "pixiflow_sync"
+        private const val CHANNEL_ID = "kuroha_sync"
         private const val NOTIFICATION_ID = 41
     }
 
@@ -29,7 +29,7 @@ class SyncForegroundService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "PixiFlow sync",
+                "Kuroha sync",
                 NotificationManager.IMPORTANCE_LOW
             )
         )
@@ -122,7 +122,7 @@ class SyncForegroundService : Service() {
 
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("PixiFlow")
+            .setContentTitle("Kuroha")
             .setContentText(snapshot.message.take(180))
             .setContentIntent(open)
             .setOngoing(snapshot.running)

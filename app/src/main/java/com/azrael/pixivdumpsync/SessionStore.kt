@@ -8,6 +8,8 @@ object SessionStore {
     private const val VERIFIED_KEY = "pixiv_session_verified"
     private const val LAST_SYNC_KEY = "last_sync_summary"
     private const val AUTO_SYNC_KEY = "auto_sync"
+    private const val FOLLOWING_FEED_ENABLED_KEY = "following_feed_enabled"
+    private const val FOLLOWING_FEED_CURSOR_KEY = "following_feed_cursor"
 
     fun normalizeCookieInput(raw: String): String {
         var value = raw.trim()
@@ -42,6 +44,7 @@ object SessionStore {
             .edit()
             .remove(COOKIE_KEY)
             .remove(VERIFIED_KEY)
+            .remove(FOLLOWING_FEED_CURSOR_KEY)
             .apply()
     }
 
@@ -73,4 +76,25 @@ object SessionStore {
     fun autoSync(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(AUTO_SYNC_KEY, true)
+
+    fun setFollowingFeedEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(FOLLOWING_FEED_ENABLED_KEY, enabled).apply()
+    }
+
+    fun followingFeedEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(FOLLOWING_FEED_ENABLED_KEY, true)
+
+    fun setFollowingFeedCursor(context: Context, illustId: String?) {
+        val editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        if (illustId.isNullOrBlank()) editor.remove(FOLLOWING_FEED_CURSOR_KEY)
+        else editor.putString(FOLLOWING_FEED_CURSOR_KEY, illustId)
+        editor.apply()
+    }
+
+    fun followingFeedCursor(context: Context): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(FOLLOWING_FEED_CURSOR_KEY, null)
+            ?.takeIf { it.isNotBlank() }
 }

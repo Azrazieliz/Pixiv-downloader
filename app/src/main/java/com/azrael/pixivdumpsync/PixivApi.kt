@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets
 
 class PixivApi(private val context: Context) {
     companion object {
-        const val USER_AGENT = "PixiFlow/0.4.2 (Android; personal-use client)"
+        const val USER_AGENT = "Kuroha/0.5.0 (Android; personal-use client)"
         private const val BASE = "https://www.pixiv.net"
     }
 
@@ -20,13 +20,31 @@ class PixivApi(private val context: Context) {
         val imageUrl: String?
     )
 
+    data class ArtworkPreview(
+        val id: String,
+        val userId: String,
+        val title: String,
+        val thumbnailUrl: String?
+    )
+
+    data class UserArtworkSnapshot(
+        val ids: List<String>,
+        val previews: List<ArtworkPreview>
+    )
+
+    data class FollowingFeedPage(
+        val items: List<ArtworkPreview>,
+        val isLastPage: Boolean
+    )
+
     data class ArtworkDetail(
         val id: String,
         val userId: String,
         val title: String,
         val pageCount: Int,
         val illustType: Int,
-        val isBookmarked: Boolean
+        val isBookmarked: Boolean,
+        val thumbnailUrl: String?
     )
 
     private var csrfToken: String? = null
@@ -43,34 +61,153 @@ class PixivApi(private val context: Context) {
         val body = root.getJSONObject("body")
         return UserProfile(
             userId = body.optString("userId", userId),
-            name = body.optString("name", "Pixiv user $userId"),
-            imageUrl = body.optString("imageBig", body.optString("image", ""))
-                .takeIf { it.isNotBlank() }
+            name = body.optString("name", body.optString("userName", "Pixiv user $userId")),
+            imageUrl = firstNonBlank(
+                body.optString("imageBig", ""),
+                body.optString("image", ""),
+                body.optString("profileImageUrl", "")
+            )
         )
     }
 
-    fun userArtworkIds(userId: String): List<String> {
+    fun userArtworkSnapshot(
+        userId: String,
+        previewLimit: Int = 5,
+        resolveMissingPreviews: Boolean = false
+    ): UserArtworkSnapshot {
         val root = getJson("$BASE/ajax/user/$userId/profile/all?lang=en")
         val body = root.getJSONObject("body")
-        val ids = linkedSetOf<String>()
+        val previewsById = linkedMapOf<String, ArtworkPreview>()
+
         for (key in listOf("illusts", "manga")) {
             val obj = body.optJSONObject(key) ?: continue
             val iterator = obj.keys()
-            while (iterator.hasNext()) ids += iterator.next()
+            while (iterator.hasNext()) {
+                val id = iterator.next()
+                val item = obj.optJSONObject(id)
+                previewsById[id] = artworkPreview(id, item, userId)
+            }
         }
-        return ids.sortedByDescending { it.toLongOrNull() ?: 0L }
+
+        val ids = previewsById.keys
+            .sortedByDescending { it.toLongOrNull() ?: 0L }
+
+        var previews = ids.take(previewLimit.coerceAtLeast(0))
+            .mapNotNull { previewsById[it] }
+
+        if (resolveMissingPreviews && previews.any { it.thumbnailUrl.isNullOrBlank() }) {
+            previews = previews.map { preview ->
+                if (!preview.thumbnailUrl.isNullOrBlank()) {
+                    preview
+                } else {
+                    runCatching {
+                        val detail = artworkDetail(preview.id)
+                        ArtworkPreview(
+                            id = detail.id,
+                            userId = detail.userId,
+                            title = detail.title,
+                            thumbnailUrl = detail.thumbnailUrl
+                        )
+                    }.getOrDefault(preview)
+                }
+            }
+        }
+
+        return UserArtworkSnapshot(ids = ids, previews = previews)
+    }
+
+    fun userArtworkIds(userId: String): List<String> =
+        userArtworkSnapshot(userId, previewLimit = 0).ids
+
+    fun followingFeedPage(page: Int = 1): FollowingFeedPage {
+        val root = getJson("$BASE/ajax/follow_latest/illust?p=$page&mode=all&lang=en")
+        val body = root.getJSONObject("body")
+        val pageInfo = body.optJSONObject("page")
+        val thumbnails = body.optJSONObject("thumbnails")
+        val illusts = thumbnails?.optJSONArray("illust") ?: JSONArray()
+        val items = mutableListOf<ArtworkPreview>()
+
+        for (i in 0 until illusts.length()) {
+            val item = illusts.optJSONObject(i) ?: continue
+            val id = item.optString("id", "")
+            val userId = item.optString("userId", "")
+            if (id.isBlank() || userId.isBlank()) continue
+            items += artworkPreview(id, item, userId)
+        }
+
+        return FollowingFeedPage(
+            items = items.distinctBy { it.id },
+            isLastPage = pageInfo?.optBoolean("isLastPage", items.isEmpty()) ?: items.isEmpty()
+        )
+    }
+
+    fun followingUsers(): List<UserProfile> {
+        val ownId = currentUserId()
+        val result = linkedMapOf<String, UserProfile>()
+
+        for (rest in listOf("show", "hide")) {
+            var offset = 0
+            val limit = 100
+
+            while (true) {
+                val root = getJson(
+                    "$BASE/ajax/user/$ownId/following?offset=$offset&limit=$limit&rest=$rest&lang=en"
+                )
+                val body = root.getJSONObject("body")
+                val users = body.optJSONArray("users") ?: JSONArray()
+
+                for (i in 0 until users.length()) {
+                    val user = users.optJSONObject(i) ?: continue
+                    val id = user.optString("userId", "")
+                    if (id.isBlank()) continue
+                    result[id] = UserProfile(
+                        userId = id,
+                        name = firstNonBlank(
+                            user.optString("userName", ""),
+                            user.optString("name", ""),
+                            "Pixiv user $id"
+                        ) ?: "Pixiv user $id",
+                        imageUrl = firstNonBlank(
+                            user.optString("profileImageUrl", ""),
+                            user.optString("imageBig", ""),
+                            user.optString("image", "")
+                        )
+                    )
+                }
+
+                if (users.length() < limit) break
+                offset += limit
+                Thread.sleep(160L)
+            }
+        }
+
+        return result.values.toList()
+    }
+
+    fun currentUserId(): String {
+        val root = getJson("$BASE/ajax/settings/self?lang=en")
+        val body = root.optJSONObject("body") ?: throw IOException("Pixiv account data unavailable.")
+        return findString(body, "userId")
+            ?: findString(body, "id")
+            ?: throw IOException("Could not resolve the signed-in Pixiv user ID.")
     }
 
     fun artworkDetail(id: String): ArtworkDetail {
         val root = getJson("$BASE/ajax/illust/$id?lang=en")
         val body = root.getJSONObject("body")
+        val urls = body.optJSONObject("urls")
         return ArtworkDetail(
             id = body.getString("id"),
             userId = body.getString("userId"),
             title = body.optString("title", ""),
             pageCount = body.optInt("pageCount", 1),
             illustType = body.optInt("illustType", 0),
-            isBookmarked = !body.isNull("bookmarkData")
+            isBookmarked = !body.isNull("bookmarkData"),
+            thumbnailUrl = firstNonBlank(
+                urls?.optString("small", "") ?: "",
+                urls?.optString("regular", "") ?: "",
+                body.optString("url", "")
+            )
         )
     }
 
@@ -103,6 +240,51 @@ class PixivApi(private val context: Context) {
                 throw e
             }
         }
+    }
+
+    private fun artworkPreview(
+        id: String,
+        item: JSONObject?,
+        fallbackUserId: String
+    ): ArtworkPreview {
+        val urls = item?.optJSONObject("urls")
+        return ArtworkPreview(
+            id = id,
+            userId = item?.optString("userId", fallbackUserId)?.takeIf { it.isNotBlank() }
+                ?: fallbackUserId,
+            title = item?.optString("title", "") ?: "",
+            thumbnailUrl = firstNonBlank(
+                item?.optString("url", "") ?: "",
+                urls?.optString("small", "") ?: "",
+                urls?.optString("regular", "") ?: "",
+                urls?.optString("thumb_mini", "") ?: ""
+            )
+        )
+    }
+
+    private fun firstNonBlank(vararg values: String): String? =
+        values.firstOrNull { it.isNotBlank() }
+
+    private fun findString(obj: JSONObject, key: String): String? {
+        if (obj.has(key)) {
+            val value = obj.optString(key, "")
+            if (value.isNotBlank()) return value
+        }
+
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val next = keys.next()
+            when (val value = obj.opt(next)) {
+                is JSONObject -> findString(value, key)?.let { return it }
+                is JSONArray -> {
+                    for (i in 0 until value.length()) {
+                        val child = value.optJSONObject(i) ?: continue
+                        findString(child, key)?.let { return it }
+                    }
+                }
+            }
+        }
+        return null
     }
 
     private fun fetchCsrfToken(): String {
