@@ -57,12 +57,14 @@ class MainActivity : Activity() {
             val running = SyncControl.snapshot().running
             refreshTick++
 
-            if ((running && refreshTick % 4 == 0) || (wasRunning && !running)) {
+            if (wasRunning && !running) {
                 renderArtists()
+                lastSyncStatus.text =
+                    "Last run • ${SessionStore.lastSyncSummary(this@MainActivity)}"
             }
 
             lastSyncRunning = running
-            handler.postDelayed(this, 1500L)
+            handler.postDelayed(this, 500L)
         }
     }
 

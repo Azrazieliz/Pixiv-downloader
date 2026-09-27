@@ -20,11 +20,13 @@ object NetworkRequestRegistry {
         active.remove(connection)
     }
 
-    @Synchronized
     fun cancelAll() {
-        val snapshot = active.toList()
-        active.clear()
-        snapshot.forEach { runCatching { it.disconnect() } }
+        val snapshot = synchronized(this) {
+            active.toList().also { active.clear() }
+        }
+        snapshot.forEach { connection ->
+            runCatching { connection.disconnect() }
+        }
     }
 }
 

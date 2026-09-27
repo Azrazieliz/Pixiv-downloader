@@ -26,11 +26,14 @@ class SyncEngine(private val context: Context) {
         mode: SyncMode,
         selectedOnly: Boolean = false,
         targetArtistId: String? = null,
+        maxArtists: Int? = null,
+        artistOffset: Int = 0,
+        queueLiveIfBusy: Boolean = true,
         progress: (String) -> Unit = {}
     ): Stats {
         val stats = Stats()
 
-        if (!SyncControl.tryStart(mode)) {
+        if (!SyncControl.tryStart(mode, queueLiveIfBusy = queueLiveIfBusy)) {
             val s = SyncControl.snapshot()
             progress(
                 if (mode == SyncMode.LIVE && s.pendingLive) {
@@ -56,6 +59,8 @@ class SyncEngine(private val context: Context) {
                     api = api,
                     selectedOnly = selectedOnly,
                     targetArtistId = targetArtistId,
+                    maxArtists = maxArtists,
+                    artistOffset = artistOffset,
                     stats = stats,
                     progress = progress
                 )
@@ -69,7 +74,7 @@ class SyncEngine(private val context: Context) {
             }
 
             finalMessage = if (SyncControl.snapshot().stopping) {
-                "Stopped safely"
+                "Stopped"
             } else {
                 "${modeLabel(mode)} complete"
             }
@@ -84,12 +89,17 @@ class SyncEngine(private val context: Context) {
                     api = api,
                     selectedOnly = false,
                     targetArtistId = null,
+                    maxArtists = null,
+                    artistOffset = 0,
                     stats = stats,
                     progress = progress
                 )
                 finalMessage = "Live sync complete"
             }
 
+            if (SyncControl.snapshot().running) {
+                SyncControl.forceFinish(finalMessage)
+            }
             released = true
             return finish(stats, mode)
         } finally {
@@ -105,6 +115,8 @@ class SyncEngine(private val context: Context) {
         api: PixivApi,
         selectedOnly: Boolean,
         targetArtistId: String?,
+        maxArtists: Int?,
+        artistOffset: Int,
         stats: Stats,
         progress: (String) -> Unit
     ) {
@@ -128,10 +140,22 @@ class SyncEngine(private val context: Context) {
             }
         }
 
-        val artists = when {
+        val allArtists = when {
             targetArtistId != null -> listOfNotNull(db.artist(targetArtistId))
             selectedOnly -> db.listSelectedLiveArtists()
             else -> db.listLiveArtists()
+        }
+        val artists = if (
+            maxArtists != null &&
+            maxArtists > 0 &&
+            allArtists.size > maxArtists
+        ) {
+            val start = artistOffset % allArtists.size
+            List(maxArtists.coerceAtMost(allArtists.size)) { index ->
+                allArtists[(start + index) % allArtists.size]
+            }
+        } else {
+            allArtists
         }
 
         stats.artists = maxOf(stats.artists, artists.size)
@@ -302,6 +326,8 @@ class SyncEngine(private val context: Context) {
                 api = api,
                 selectedOnly = false,
                 targetArtistId = null,
+                maxArtists = null,
+                artistOffset = 0,
                 stats = stats,
                 progress = progress
             )
@@ -455,13 +481,6 @@ class SyncEngine(private val context: Context) {
                 )
                 return
             }
-
-            serviceQueuedLiveDuringBackfill(
-                db,
-                api,
-                stats,
-                progress
-            )
 
             if (!SyncControl.checkpoint()) {
                 db.setArchiveMeta(
@@ -623,8 +642,6 @@ class SyncEngine(private val context: Context) {
         )
 
         stats.worksCompleted++
-        Thread.sleep(350L)
-
         return WorkResult.DONE
     }
 

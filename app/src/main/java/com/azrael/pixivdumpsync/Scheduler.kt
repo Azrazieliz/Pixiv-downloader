@@ -19,6 +19,10 @@ object Scheduler {
         )
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setPersisted(true)
+            .setBackoffCriteria(
+                30L * 1000L,
+                JobInfo.BACKOFF_POLICY_EXPONENTIAL
+            )
             .setPeriodic(FIFTEEN_MINUTES)
             .build()
 

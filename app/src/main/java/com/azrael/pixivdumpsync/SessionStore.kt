@@ -11,6 +11,7 @@ object SessionStore {
     private const val FOLLOWING_FEED_ENABLED_KEY = "following_feed_enabled"
     private const val FOLLOWING_FEED_CURSOR_KEY = "following_feed_cursor"
     private const val FOLLOWING_PREVIEW_KEY = "following_preview_json"
+    private const val BACKGROUND_ARTIST_OFFSET_KEY = "background_artist_offset"
 
     fun normalizeCookieInput(raw: String): String {
         var value = raw.trim()
@@ -122,4 +123,16 @@ object SessionStore {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(FOLLOWING_PREVIEW_KEY, null)
             ?.takeIf { it.isNotBlank() }
+
+    fun backgroundArtistOffset(context: Context): Int =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(BACKGROUND_ARTIST_OFFSET_KEY, 0)
+            .coerceAtLeast(0)
+
+    fun setBackgroundArtistOffset(context: Context, value: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(BACKGROUND_ARTIST_OFFSET_KEY, value.coerceAtLeast(0))
+            .apply()
+    }
 }

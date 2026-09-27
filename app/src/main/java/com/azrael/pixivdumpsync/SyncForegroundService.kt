@@ -24,6 +24,7 @@ class SyncForegroundService : Service() {
     }
 
     private val executor = Executors.newSingleThreadExecutor()
+    @Volatile private var lastNotificationAt = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -40,17 +41,17 @@ class SyncForegroundService : Service() {
         when (intent?.action) {
             ACTION_PAUSE -> {
                 SyncControl.pause()
-                updateNotification()
+                updateNotification(force = true)
                 return START_NOT_STICKY
             }
             ACTION_RESUME -> {
                 SyncControl.resume()
-                updateNotification()
+                updateNotification(force = true)
                 return START_NOT_STICKY
             }
             ACTION_STOP -> {
                 SyncControl.stop()
-                updateNotification()
+                updateNotification(force = true)
                 return START_NOT_STICKY
             }
         }
@@ -73,11 +74,18 @@ class SyncForegroundService : Service() {
                     updateNotification()
                 }
             } catch (t: Throwable) {
-                SyncControl.updateMessage("Sync failed: ${t.message}")
-                updateNotification()
+                if (SyncControl.snapshot().running) {
+                    SyncControl.forceFinish("Sync failed: ${t.message ?: t.javaClass.simpleName}")
+                }
+                updateNotification(force = true)
             } finally {
-                updateNotification()
-                stopForeground(STOP_FOREGROUND_DETACH)
+                if (SyncControl.snapshot().running) {
+                    val current = SyncControl.snapshot()
+                    SyncControl.forceFinish(if (current.stopping) "Stopped" else "Idle")
+                }
+                updateNotification(force = true)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
                 stopSelf(startId)
             }
         }
@@ -92,7 +100,10 @@ class SyncForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun updateNotification() {
+    private fun updateNotification(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastNotificationAt < 750L) return
+        lastNotificationAt = now
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, notification())
     }

@@ -24,9 +24,12 @@ object SyncControl {
     @Volatile private var mode: SyncMode? = null
     @Volatile private var message = "Idle"
 
-    fun tryStart(newMode: SyncMode): Boolean = synchronized(lock) {
+    fun tryStart(
+        newMode: SyncMode,
+        queueLiveIfBusy: Boolean = true
+    ): Boolean = synchronized(lock) {
         if (active) {
-            if (newMode == SyncMode.LIVE && !stopRequested) {
+            if (queueLiveIfBusy && newMode == SyncMode.LIVE && !stopRequested) {
                 pendingLive = true
             }
             return@synchronized false

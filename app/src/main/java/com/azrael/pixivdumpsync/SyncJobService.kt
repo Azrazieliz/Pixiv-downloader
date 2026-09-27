@@ -8,13 +8,31 @@ class SyncJobService : JobService() {
     private val executor = Executors.newSingleThreadExecutor()
 
     override fun onStartJob(params: JobParameters?): Boolean {
-        if (params == null || !SessionStore.isLoggedIn(this)) return false
+        if (
+            params == null ||
+            !SessionStore.isLoggedIn(this) ||
+            !SessionStore.autoSync(this)
+        ) {
+            return false
+        }
+
+        if (SyncControl.snapshot().running) {
+            return false
+        }
 
         executor.execute {
             try {
-                SyncEngine(applicationContext).run(
+                val offset = SessionStore.backgroundArtistOffset(applicationContext)
+                val stats = SyncEngine(applicationContext).run(
                     mode = SyncMode.LIVE,
-                    selectedOnly = false
+                    selectedOnly = false,
+                    maxArtists = BACKGROUND_ARTIST_BATCH,
+                    artistOffset = offset,
+                    queueLiveIfBusy = false
+                )
+                SessionStore.setBackgroundArtistOffset(
+                    applicationContext,
+                    offset + stats.artists.coerceAtLeast(BACKGROUND_ARTIST_BATCH)
                 )
                 jobFinished(params, false)
             } catch (_: Throwable) {
@@ -32,5 +50,9 @@ class SyncJobService : JobService() {
     override fun onDestroy() {
         executor.shutdownNow()
         super.onDestroy()
+    }
+
+    companion object {
+        private const val BACKGROUND_ARTIST_BATCH = 8
     }
 }
