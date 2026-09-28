@@ -44,7 +44,8 @@ class PixivApi(private val context: Context) {
         val pageCount: Int,
         val illustType: Int,
         val isBookmarked: Boolean,
-        val thumbnailUrl: String?
+        val thumbnailUrl: String?,
+        val originalUrl: String?
     )
 
     private var csrfToken: String? = null
@@ -210,6 +211,10 @@ class PixivApi(private val context: Context) {
                 urls?.optString("small", "") ?: "",
                 urls?.optString("regular", "") ?: "",
                 body.optString("url", "")
+            ),
+            originalUrl = firstNonBlank(
+                urls?.optString("original", "") ?: "",
+                body.optString("original", "")
             )
         )
     }

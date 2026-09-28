@@ -4,6 +4,10 @@ import android.content.Context
 import java.net.UnknownHostException
 import java.text.DateFormat
 import java.util.Date
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class SyncEngine(private val context: Context) {
     data class Stats(
@@ -21,6 +25,16 @@ class SyncEngine(private val context: Context) {
         SKIPPED,
         STOPPED
     }
+
+    private data class WorkTask(
+        val artistId: String,
+        val id: String
+    )
+
+    private data class ParallelBatchResult(
+        val hadError: Boolean
+    )
+
 
     fun run(
         mode: SyncMode,
@@ -223,13 +237,15 @@ class SyncEngine(private val context: Context) {
         val cursor = SessionStore.followingFeedCursor(context)
         val allItems = mutableListOf<PixivApi.ArtworkPreview>()
         var newestId: String? = null
-        val maxPages = if (cursor.isNullOrBlank()) 1 else 10
+        var pageNumber = 1
 
-        for (pageNumber in 1..maxPages) {
+        while (true) {
             if (!SyncControl.checkpoint()) return
 
             val page = api.followingFeedPage(pageNumber)
             if (newestId == null) newestId = page.items.firstOrNull()?.id
+
+            val previousSize = allItems.size
             allItems += page.items.filter { candidate ->
                 allItems.none { it.id == candidate.id }
             }
@@ -237,7 +253,12 @@ class SyncEngine(private val context: Context) {
             if (!cursor.isNullOrBlank() && page.items.any { it.id == cursor }) {
                 break
             }
+
+            if (cursor.isNullOrBlank()) break
             if (page.isLastPage || page.items.isEmpty()) break
+            if (allItems.size == previousSize) break
+
+            pageNumber++
         }
 
         if (cursor.isNullOrBlank()) {
@@ -250,31 +271,16 @@ class SyncEngine(private val context: Context) {
                     "Following feed • resuming ${pendingFromEarlierRun.size} incomplete work(s)"
                 )
 
-                var resumeHadError = false
-                for ((index, item) in pendingFromEarlierRun.asReversed().withIndex()) {
-                    if (!SyncControl.checkpoint()) return
+                val resumeResult = syncWorkTasksParallel(
+                    tasks = pendingFromEarlierRun.asReversed().map {
+                        WorkTask(it.userId, it.id)
+                    },
+                    stats = stats,
+                    progressLabel = "Following feed resume",
+                    progress = progress
+                )
 
-                    stats.worksSeen++
-                    val message =
-                        "Following feed resume • ${index + 1}/${pendingFromEarlierRun.size}"
-                    SyncControl.updateMessage(message)
-                    progress(message)
-
-                    try {
-                        when (syncWork(db, api, item.userId, item.id, stats)) {
-                            WorkResult.DONE, WorkResult.SKIPPED -> Unit
-                            WorkResult.STOPPED -> return
-                        }
-                    } catch (t: Throwable) {
-                        if (SyncControl.isStopping()) return
-                        resumeHadError = true
-                        stats.errors++
-                        progress("Following feed error ${item.id}: ${t.message}")
-                        if (t is HttpStatusException && t.code == 429) throw t
-                    }
-                }
-
-                if (resumeHadError) {
+                if (resumeResult.hadError) {
                     progress("Following feed • incomplete work(s) still pending")
                     return
                 }
@@ -296,35 +302,16 @@ class SyncEngine(private val context: Context) {
             return
         }
 
-        var hadError = false
-        for ((index, item) in newItems.asReversed().withIndex()) {
-            if (!SyncControl.checkpoint()) return
+        val feedResult = syncWorkTasksParallel(
+            tasks = newItems.asReversed().map {
+                WorkTask(it.userId, it.id)
+            },
+            stats = stats,
+            progressLabel = "Following feed",
+            progress = progress
+        )
 
-            stats.worksSeen++
-            val message = "Following feed • ${index + 1}/${newItems.size}"
-            SyncControl.updateMessage(message)
-            progress(message)
-
-            if (isCompleteOnDisk(db, item.id)) {
-                stats.skippedDone++
-                continue
-            }
-
-            try {
-                when (syncWork(db, api, item.userId, item.id, stats)) {
-                    WorkResult.DONE, WorkResult.SKIPPED -> Unit
-                    WorkResult.STOPPED -> return
-                }
-            } catch (t: Throwable) {
-                if (SyncControl.isStopping()) return
-                hadError = true
-                stats.errors++
-                progress("Following feed error ${item.id}: ${t.message}")
-                if (t is HttpStatusException && t.code == 429) throw t
-            }
-        }
-
-        if (!hadError && newestId != null) {
+        if (!feedResult.hadError && newestId != null) {
             SessionStore.setFollowingFeedCursor(context, newestId)
         }
     }
@@ -578,71 +565,33 @@ class SyncEngine(private val context: Context) {
             error = null
         )
 
-        var artistErrors = 0
+        if (!SyncControl.checkpoint()) {
+            db.setArchiveMeta(
+                artist.userId,
+                "PARTIAL",
+                ids.size,
+                null
+            )
+            return
+        }
 
-        for ((index, id) in ids.withIndex()) {
-            if (!SyncControl.checkpoint()) {
-                db.setArchiveMeta(
-                    artist.userId,
-                    "PARTIAL",
-                    ids.size,
-                    null
-                )
-                return
-            }
+        val errorsBefore = stats.errors
+        syncWorkTasksParallel(
+            tasks = ids.map { WorkTask(artist.userId, it) },
+            stats = stats,
+            progressLabel = "Backfill • ${artist.label ?: artist.userId}",
+            progress = progress
+        )
+        val artistErrors = stats.errors - errorsBefore
 
-            if (!SyncControl.checkpoint()) {
-                db.setArchiveMeta(
-                    artist.userId,
-                    "PARTIAL",
-                    ids.size,
-                    null
-                )
-                return
-            }
-
-            stats.worksSeen++
-            val message =
-                "Backfill • ${artist.label ?: artist.userId} • ${index + 1}/${ids.size}"
-
-            SyncControl.updateMessage(message)
-            progress(message)
-
-            if (isCompleteOnDisk(db, id)) {
-                stats.skippedDone++
-                continue
-            }
-
-            try {
-                when (syncWork(db, api, artist.userId, id, stats)) {
-                    WorkResult.DONE, WorkResult.SKIPPED -> Unit
-                    WorkResult.STOPPED -> {
-                        db.setArchiveMeta(
-                            artist.userId,
-                            "PARTIAL",
-                            ids.size,
-                            null
-                        )
-                        return
-                    }
-                }
-            } catch (t: Throwable) {
-                if (SyncControl.isStopping()) {
-                    db.setArchiveMeta(artist.userId, "PARTIAL", ids.size, null)
-                    return
-                }
-                stats.errors++
-                artistErrors++
-                db.setArtistError(
-                    artist.userId,
-                    t.message ?: "Unknown error"
-                )
-                progress("Error $id: ${t.message}")
-
-                if (t is HttpStatusException && t.code == 429) {
-                    throw t
-                }
-            }
+        if (SyncControl.isStopping()) {
+            db.setArchiveMeta(
+                artist.userId,
+                "PARTIAL",
+                ids.size,
+                null
+            )
+            return
         }
 
         val p = db.artistProgress(artist.userId, ids.size)
@@ -660,6 +609,109 @@ class SyncEngine(private val context: Context) {
             knownTotal = ids.size,
             error = if (complete) null else artist.lastError
         )
+    }
+
+    private fun syncWorkTasksParallel(
+        tasks: List<WorkTask>,
+        stats: Stats,
+        progressLabel: String,
+        progress: (String) -> Unit
+    ): ParallelBatchResult {
+        if (tasks.isEmpty()) return ParallelBatchResult(hadError = false)
+
+        val workerCount = minOf(MAX_PARALLEL_WORKS, tasks.size)
+        val nextIndex = AtomicInteger(0)
+        val completedCount = AtomicInteger(0)
+        val hadError = AtomicBoolean(false)
+        val fatal = AtomicReference<Throwable?>(null)
+        val executor = Executors.newFixedThreadPool(workerCount)
+
+        try {
+            val futures = List(workerCount) {
+                executor.submit {
+                    val localStats = Stats()
+                    AppDb(context).use { workerDb ->
+                        val workerApi = PixivApi(context)
+
+                        while (
+                            fatal.get() == null &&
+                            SyncControl.checkpoint()
+                        ) {
+                            val index = nextIndex.getAndIncrement()
+                            if (index >= tasks.size) break
+
+                            val task = tasks[index]
+                            localStats.worksSeen++
+
+                            try {
+                                if (isCompleteOnDisk(workerDb, task.id)) {
+                                    localStats.skippedDone++
+                                } else {
+                                    when (
+                                        syncWork(
+                                            db = workerDb,
+                                            api = workerApi,
+                                            expectedArtistId = task.artistId,
+                                            id = task.id,
+                                            stats = localStats
+                                        )
+                                    ) {
+                                        WorkResult.DONE,
+                                        WorkResult.SKIPPED -> Unit
+                                        WorkResult.STOPPED -> break
+                                    }
+                                }
+                            } catch (t: Throwable) {
+                                if (SyncControl.isStopping()) break
+                                hadError.set(true)
+                                localStats.errors++
+                                workerDb.setArtistError(
+                                    task.artistId,
+                                    t.message ?: "Unknown error"
+                                )
+                                progress(
+                                    "$progressLabel error ${task.id}: ${t.message ?: t.javaClass.simpleName}"
+                                )
+
+                                if (
+                                    t is HttpStatusException && t.code == 429 ||
+                                    isGlobalNetworkError(t)
+                                ) {
+                                    fatal.compareAndSet(null, t)
+                                }
+                            } finally {
+                                val done = completedCount.incrementAndGet()
+                                val message = "$progressLabel • $done/${tasks.size}"
+                                SyncControl.updateMessage(message)
+                                progress(message)
+                            }
+                        }
+                    }
+
+                    synchronized(stats) {
+                        stats.worksSeen += localStats.worksSeen
+                        stats.worksCompleted += localStats.worksCompleted
+                        stats.pagesDownloaded += localStats.pagesDownloaded
+                        stats.skippedDone += localStats.skippedDone
+                        stats.skippedUgoira += localStats.skippedUgoira
+                        stats.errors += localStats.errors
+                    }
+                }
+            }
+
+            futures.forEach { future ->
+                runCatching { future.get() }
+                    .onFailure { error ->
+                        hadError.set(true)
+                        fatal.compareAndSet(null, error.cause ?: error)
+                    }
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        fatal.get()?.let { throw it }
+        return ParallelBatchResult(hadError = hadError.get())
     }
 
     private fun syncWork(
@@ -691,7 +743,14 @@ class SyncEngine(private val context: Context) {
             return WorkResult.SKIPPED
         }
 
-        val urls = api.pageOriginalUrls(id)
+        val urls = if (
+            detail.pageCount == 1 &&
+            !detail.originalUrl.isNullOrBlank()
+        ) {
+            listOf(requireNotNull(detail.originalUrl))
+        } else {
+            api.pageOriginalUrls(id)
+        }
 
         db.upsertWork(
             id,
@@ -719,7 +778,8 @@ class SyncEngine(private val context: Context) {
                     context = context,
                     imageUrl = imageUrl,
                     filename = filename,
-                    referer = "https://www.pixiv.net/artworks/$id"
+                    referer = "https://www.pixiv.net/artworks/$id",
+                    knownMissing = true
                 )
                 stats.pagesDownloaded++
             }
@@ -821,4 +881,8 @@ class SyncEngine(private val context: Context) {
             SyncMode.BACKFILL -> "Archive backfill"
             SyncMode.DIRECT -> "Direct download"
         }
+
+    companion object {
+        private const val MAX_PARALLEL_WORKS = 3
+    }
 }
