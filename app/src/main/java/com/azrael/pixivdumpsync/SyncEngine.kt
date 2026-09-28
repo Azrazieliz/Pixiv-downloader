@@ -558,71 +558,33 @@ class SyncEngine(private val context: Context) {
             error = null
         )
 
-        var artistErrors = 0
+        if (!SyncControl.checkpoint()) {
+            db.setArchiveMeta(
+                artist.userId,
+                "PARTIAL",
+                ids.size,
+                null
+            )
+            return
+        }
 
-        for ((index, id) in ids.withIndex()) {
-            if (!SyncControl.checkpoint()) {
-                db.setArchiveMeta(
-                    artist.userId,
-                    "PARTIAL",
-                    ids.size,
-                    null
-                )
-                return
-            }
+        val errorsBefore = stats.errors
+        syncWorkTasksParallel(
+            tasks = ids.map { WorkTask(artist.userId, it) },
+            stats = stats,
+            progressLabel = "Backfill • ${artist.label ?: artist.userId}",
+            progress = progress
+        )
+        val artistErrors = stats.errors - errorsBefore
 
-            if (!SyncControl.checkpoint()) {
-                db.setArchiveMeta(
-                    artist.userId,
-                    "PARTIAL",
-                    ids.size,
-                    null
-                )
-                return
-            }
-
-            stats.worksSeen++
-            val message =
-                "Backfill • ${artist.label ?: artist.userId} • ${index + 1}/${ids.size}"
-
-            SyncControl.updateMessage(message)
-            progress(message)
-
-            if (isCompleteOnDisk(db, id)) {
-                stats.skippedDone++
-                continue
-            }
-
-            try {
-                when (syncWork(db, api, artist.userId, id, stats)) {
-                    WorkResult.DONE, WorkResult.SKIPPED -> Unit
-                    WorkResult.STOPPED -> {
-                        db.setArchiveMeta(
-                            artist.userId,
-                            "PARTIAL",
-                            ids.size,
-                            null
-                        )
-                        return
-                    }
-                }
-            } catch (t: Throwable) {
-                if (SyncControl.isStopping()) {
-                    db.setArchiveMeta(artist.userId, "PARTIAL", ids.size, null)
-                    return
-                }
-                stats.errors++
-                artistErrors++
-                db.setArtistError(
-                    artist.userId,
-                    t.message ?: "Unknown error"
-                )
-                progress("Error $id: ${t.message}")
-
-                if (t is HttpStatusException && t.code == 429) {
-                    throw t
-                }
-            }
+        if (SyncControl.isStopping()) {
+            db.setArchiveMeta(
+                artist.userId,
+                "PARTIAL",
+                ids.size,
+                null
+            )
+            return
         }
 
         val p = db.artistProgress(artist.userId, ids.size)
