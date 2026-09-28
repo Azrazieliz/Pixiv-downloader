@@ -45,9 +45,10 @@ object FileStore {
         context: Context,
         imageUrl: String,
         filename: String,
-        referer: String
+        referer: String,
+        knownMissing: Boolean = false
     ) {
-        if (exists(context, filename)) return
+        if (!knownMissing && exists(context, filename)) return
 
         val resolver = context.contentResolver
         val values = ContentValues().apply {
