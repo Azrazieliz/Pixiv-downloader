@@ -24,8 +24,7 @@ class PixivApi(private val context: Context) {
         val id: String,
         val userId: String,
         val title: String,
-        val thumbnailUrl: String?,
-        val originalUrl: String?
+        val thumbnailUrl: String?
     )
 
     data class UserArtworkSnapshot(
@@ -45,7 +44,8 @@ class PixivApi(private val context: Context) {
         val pageCount: Int,
         val illustType: Int,
         val isBookmarked: Boolean,
-        val thumbnailUrl: String?
+        val thumbnailUrl: String?,
+        val originalUrl: String?
     )
 
     private var csrfToken: String? = null
