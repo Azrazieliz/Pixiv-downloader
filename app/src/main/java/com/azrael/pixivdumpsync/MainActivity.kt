@@ -38,6 +38,7 @@ class MainActivity : Activity() {
     private lateinit var checkNowButton: Button
     private lateinit var backfillButton: Button
     private lateinit var followingFeedSwitch: Switch
+    private lateinit var autoSyncSwitch: Switch
     private lateinit var followImportButton: Button
     private lateinit var followingPreviewStatus: TextView
     private lateinit var followingPreviewRow: LinearLayout
@@ -76,7 +77,11 @@ class MainActivity : Activity() {
         window.navigationBarColor = UiKit.bg
         buildUi()
         requestNotificationPermissionIfNeeded()
-        Scheduler.ensure(this)
+        if (SessionStore.autoSync(this)) {
+            Scheduler.ensure(this)
+        } else {
+            Scheduler.cancel(this)
+        }
     }
 
     override fun onResume() {
@@ -136,6 +141,26 @@ class MainActivity : Activity() {
         )
         root.addView(header)
 
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(14), 0, 0)
+        }
+        tabs.addView(Button(this).apply {
+            text = "Archive"
+            UiKit.stylePrimaryButton(this@MainActivity, this)
+            isEnabled = false
+        }, LinearLayout.LayoutParams(0, dp(44), 1f))
+        tabs.addView(Button(this).apply {
+            text = "New artworks"
+            UiKit.styleSecondaryButton(this@MainActivity, this)
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, FollowingActivity::class.java))
+            }
+        }, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+            leftMargin = dp(8)
+        })
+        root.addView(tabs)
+
         root.addView(section("ACCOUNT"), sectionParams())
 
         val accountCard = card()
@@ -192,7 +217,7 @@ class MainActivity : Activity() {
         }
 
         checkNowButton = Button(this).apply {
-            text = "Check new now"
+            text = "Sync now"
             UiKit.stylePrimaryButton(this@MainActivity, this)
             setOnClickListener { startSync(SyncMode.LIVE) }
         }
@@ -296,6 +321,60 @@ class MainActivity : Activity() {
         }
         feedRow.addView(followingFeedSwitch)
         syncCard.addView(feedRow)
+
+        val autoRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, 0)
+        }
+        val autoText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        autoText.addView(TextView(this).apply {
+            text = "Automatic sync"
+            UiKit.title(this, 14.5f)
+        })
+        autoText.addView(TextView(this).apply {
+            text = "Periodically check the Following feed and watched artists in the background."
+            UiKit.body(this, 11.5f)
+            setPadding(0, dp(2), dp(8), 0)
+        })
+        autoRow.addView(
+            autoText,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        autoSyncSwitch = Switch(this).apply {
+            isChecked = SessionStore.autoSync(this@MainActivity)
+            showText = false
+            thumbTintList = ColorStateList(
+                arrayOf(
+                    intArrayOf(android.R.attr.state_checked),
+                    intArrayOf()
+                ),
+                intArrayOf(UiKit.accent, UiKit.muted)
+            )
+            setOnCheckedChangeListener { _, checked ->
+                SessionStore.setAutoSync(this@MainActivity, checked)
+                if (checked) {
+                    Scheduler.ensure(this@MainActivity)
+                    Scheduler.runSoon(this@MainActivity)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Automatic sync enabled",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    Scheduler.cancel(this@MainActivity)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Automatic sync disabled",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+        autoRow.addView(autoSyncSwitch)
+        syncCard.addView(autoRow)
 
         root.addView(syncCard, cardParams())
 
@@ -710,6 +789,17 @@ class MainActivity : Activity() {
                 dp(40)
             ).apply { rightMargin = dp(7) })
         }
+
+        bottom.addView(Button(this).apply {
+            text = "Backfill"
+            UiKit.styleSecondaryButton(this@MainActivity, this)
+            minHeight = dp(38)
+            setPadding(dp(12), 0, dp(12), 0)
+            setOnClickListener { startSync(SyncMode.BACKFILL, artist.userId) }
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            dp(40)
+        ).apply { rightMargin = dp(7) })
 
         bottom.addView(Button(this).apply {
             text = "Remove"
@@ -1175,6 +1265,7 @@ class MainActivity : Activity() {
         when (mode) {
             SyncMode.LIVE -> "Live Sync"
             SyncMode.BACKFILL -> "Archive Backfill"
+            SyncMode.DIRECT -> "Direct Download"
             null -> ""
         }
 
