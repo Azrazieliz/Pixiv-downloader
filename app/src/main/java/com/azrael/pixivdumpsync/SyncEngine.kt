@@ -726,7 +726,8 @@ class SyncEngine(private val context: Context) {
                     context = context,
                     imageUrl = imageUrl,
                     filename = filename,
-                    referer = "https://www.pixiv.net/artworks/$id"
+                    referer = "https://www.pixiv.net/artworks/$id",
+                    knownMissing = true
                 )
                 stats.pagesDownloaded++
             }
