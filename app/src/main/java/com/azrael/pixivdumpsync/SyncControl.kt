@@ -2,7 +2,8 @@ package com.azrael.pixivdumpsync
 
 enum class SyncMode {
     LIVE,
-    BACKFILL
+    BACKFILL,
+    DIRECT
 }
 
 object SyncControl {
@@ -39,19 +40,25 @@ object SyncControl {
         paused = false
         stopRequested = false
         mode = newMode
-        message = if (newMode == SyncMode.LIVE) {
-            "Checking for new works…"
-        } else {
-            "Backfill starting…"
+        message = when (newMode) {
+            SyncMode.LIVE -> "Checking for new works…"
+            SyncMode.BACKFILL -> "Backfill starting…"
+            SyncMode.DIRECT -> "Preparing download…"
         }
         true
     }
 
     fun checkpoint(): Boolean {
+        if (Thread.currentThread().isInterrupted) return false
         while (paused && !stopRequested) {
-            Thread.sleep(200L)
+            try {
+                Thread.sleep(200L)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
         }
-        return !stopRequested
+        return !stopRequested && !Thread.currentThread().isInterrupted
     }
 
     fun takePendingLive(): Boolean = synchronized(lock) {
