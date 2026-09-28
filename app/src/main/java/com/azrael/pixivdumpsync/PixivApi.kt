@@ -24,7 +24,8 @@ class PixivApi(private val context: Context) {
         val id: String,
         val userId: String,
         val title: String,
-        val thumbnailUrl: String?
+        val thumbnailUrl: String?,
+        val originalUrl: String?
     )
 
     data class UserArtworkSnapshot(
@@ -210,6 +211,10 @@ class PixivApi(private val context: Context) {
                 urls?.optString("small", "") ?: "",
                 urls?.optString("regular", "") ?: "",
                 body.optString("url", "")
+            ),
+            originalUrl = firstNonBlank(
+                urls?.optString("original", "") ?: "",
+                body.optString("original", "")
             )
         )
     }
