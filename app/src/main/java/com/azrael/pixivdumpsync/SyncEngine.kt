@@ -264,31 +264,16 @@ class SyncEngine(private val context: Context) {
                     "Following feed • resuming ${pendingFromEarlierRun.size} incomplete work(s)"
                 )
 
-                var resumeHadError = false
-                for ((index, item) in pendingFromEarlierRun.asReversed().withIndex()) {
-                    if (!SyncControl.checkpoint()) return
+                val resumeResult = syncWorkTasksParallel(
+                    tasks = pendingFromEarlierRun.asReversed().map {
+                        WorkTask(it.userId, it.id)
+                    },
+                    stats = stats,
+                    progressLabel = "Following feed resume",
+                    progress = progress
+                )
 
-                    stats.worksSeen++
-                    val message =
-                        "Following feed resume • ${index + 1}/${pendingFromEarlierRun.size}"
-                    SyncControl.updateMessage(message)
-                    progress(message)
-
-                    try {
-                        when (syncWork(db, api, item.userId, item.id, stats)) {
-                            WorkResult.DONE, WorkResult.SKIPPED -> Unit
-                            WorkResult.STOPPED -> return
-                        }
-                    } catch (t: Throwable) {
-                        if (SyncControl.isStopping()) return
-                        resumeHadError = true
-                        stats.errors++
-                        progress("Following feed error ${item.id}: ${t.message}")
-                        if (t is HttpStatusException && t.code == 429) throw t
-                    }
-                }
-
-                if (resumeHadError) {
+                if (resumeResult.hadError) {
                     progress("Following feed • incomplete work(s) still pending")
                     return
                 }
@@ -310,35 +295,16 @@ class SyncEngine(private val context: Context) {
             return
         }
 
-        var hadError = false
-        for ((index, item) in newItems.asReversed().withIndex()) {
-            if (!SyncControl.checkpoint()) return
+        val feedResult = syncWorkTasksParallel(
+            tasks = newItems.asReversed().map {
+                WorkTask(it.userId, it.id)
+            },
+            stats = stats,
+            progressLabel = "Following feed",
+            progress = progress
+        )
 
-            stats.worksSeen++
-            val message = "Following feed • ${index + 1}/${newItems.size}"
-            SyncControl.updateMessage(message)
-            progress(message)
-
-            if (isCompleteOnDisk(db, item.id)) {
-                stats.skippedDone++
-                continue
-            }
-
-            try {
-                when (syncWork(db, api, item.userId, item.id, stats)) {
-                    WorkResult.DONE, WorkResult.SKIPPED -> Unit
-                    WorkResult.STOPPED -> return
-                }
-            } catch (t: Throwable) {
-                if (SyncControl.isStopping()) return
-                hadError = true
-                stats.errors++
-                progress("Following feed error ${item.id}: ${t.message}")
-                if (t is HttpStatusException && t.code == 429) throw t
-            }
-        }
-
-        if (!hadError && newestId != null) {
+        if (!feedResult.hadError && newestId != null) {
             SessionStore.setFollowingFeedCursor(context, newestId)
         }
     }
@@ -730,6 +696,13 @@ class SyncEngine(private val context: Context) {
                                 if (SyncControl.isStopping()) break
                                 hadError.set(true)
                                 localStats.errors++
+                                workerDb.setArtistError(
+                                    task.artistId,
+                                    t.message ?: "Unknown error"
+                                )
+                                progress(
+                                    "$progressLabel error ${task.id}: ${t.message ?: t.javaClass.simpleName}"
+                                )
 
                                 if (
                                     t is HttpStatusException && t.code == 429 ||
