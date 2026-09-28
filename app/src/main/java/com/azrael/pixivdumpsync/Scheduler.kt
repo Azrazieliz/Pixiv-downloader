@@ -51,6 +51,7 @@ object Scheduler {
         )
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setMinimumLatency(1_000L)
+            .setOverrideDeadline(60_000L)
             .setBackoffCriteria(
                 30L * 1000L,
                 JobInfo.BACKOFF_POLICY_EXPONENTIAL
