@@ -740,7 +740,7 @@ class SyncEngine(private val context: Context) {
             detail.pageCount == 1 &&
             !detail.originalUrl.isNullOrBlank()
         ) {
-            listOf(detail.originalUrl)
+            listOf(requireNotNull(detail.originalUrl))
         } else {
             api.pageOriginalUrls(id)
         }
