@@ -26,6 +26,7 @@ class SyncEngine(private val context: Context) {
         mode: SyncMode,
         selectedOnly: Boolean = false,
         targetArtistId: String? = null,
+        targetArtworkId: String? = null,
         maxArtists: Int? = null,
         artistOffset: Int = 0,
         queueLiveIfBusy: Boolean = true,
@@ -68,6 +69,18 @@ class SyncEngine(private val context: Context) {
                     db = db,
                     api = api,
                     targetArtistId = targetArtistId,
+                    stats = stats,
+                    progress = progress
+                )
+                SyncMode.DIRECT -> runDirectPass(
+                    db = db,
+                    api = api,
+                    targetArtistId = requireNotNull(targetArtistId) {
+                        "Direct download requires an artist ID"
+                    },
+                    targetArtworkId = requireNotNull(targetArtworkId) {
+                        "Direct download requires an artwork ID"
+                    },
                     stats = stats,
                     progress = progress
                 )
@@ -216,16 +229,19 @@ class SyncEngine(private val context: Context) {
             if (page.isLastPage || page.items.isEmpty()) break
         }
 
-        val newItems = if (cursor.isNullOrBlank()) {
-            allItems
-        } else {
-            allItems.takeWhile { it.id != cursor }
+        if (cursor.isNullOrBlank()) {
+            if (newestId != null) {
+                SessionStore.setFollowingFeedCursor(context, newestId)
+                progress("Following feed ready • baseline set; future new works will sync")
+            } else {
+                progress("Following feed • no works returned")
+            }
+            return
         }
 
+        val newItems = allItems.takeWhile { it.id != cursor }
+
         if (newItems.isEmpty()) {
-            if (cursor.isNullOrBlank() && newestId != null) {
-                SessionStore.setFollowingFeedCursor(context, newestId)
-            }
             progress("Following feed • no new works")
             return
         }
@@ -260,6 +276,48 @@ class SyncEngine(private val context: Context) {
 
         if (!hadError && newestId != null) {
             SessionStore.setFollowingFeedCursor(context, newestId)
+        }
+    }
+
+    private fun runDirectPass(
+        db: AppDb,
+        api: PixivApi,
+        targetArtistId: String,
+        targetArtworkId: String,
+        stats: Stats,
+        progress: (String) -> Unit
+    ) {
+        SyncControl.setMode(SyncMode.DIRECT)
+
+        if (!SyncControl.checkpoint()) return
+
+        stats.artists = maxOf(stats.artists, 1)
+        stats.worksSeen++
+
+        if (isCompleteOnDisk(db, targetArtworkId)) {
+            stats.skippedDone++
+            val message = "Artwork $targetArtworkId is already downloaded"
+            SyncControl.updateMessage(message)
+            progress(message)
+            return
+        }
+
+        val message = "Downloading artwork $targetArtworkId…"
+        SyncControl.updateMessage(message)
+        progress(message)
+
+        when (syncWork(db, api, targetArtistId, targetArtworkId, stats)) {
+            WorkResult.DONE -> {
+                val done = "Artwork $targetArtworkId downloaded"
+                SyncControl.updateMessage(done)
+                progress(done)
+            }
+            WorkResult.SKIPPED -> {
+                val skipped = "Artwork $targetArtworkId was skipped"
+                SyncControl.updateMessage(skipped)
+                progress(skipped)
+            }
+            WorkResult.STOPPED -> Unit
         }
     }
 
@@ -707,9 +765,9 @@ class SyncEngine(private val context: Context) {
     }
 
     private fun modeLabel(mode: SyncMode): String =
-        if (mode == SyncMode.LIVE) {
-            "Live sync"
-        } else {
-            "Archive backfill"
+        when (mode) {
+            SyncMode.LIVE -> "Live sync"
+            SyncMode.BACKFILL -> "Archive backfill"
+            SyncMode.DIRECT -> "Direct download"
         }
 }
