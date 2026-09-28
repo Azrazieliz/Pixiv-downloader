@@ -88,8 +88,19 @@ class SyncForegroundService : Service() {
                     updateNotification()
                 }
             } catch (t: Throwable) {
-                if (SyncControl.snapshot().running) {
-                    SyncControl.forceFinish("Sync failed: ${t.message ?: t.javaClass.simpleName}")
+                val current = SyncControl.snapshot()
+                if (current.running) {
+                    if (
+                        current.stopping ||
+                        t is SyncCancelledException ||
+                        t is InterruptedException
+                    ) {
+                        SyncControl.forceFinish("Stopped")
+                    } else {
+                        SyncControl.forceFinish(
+                            "Sync failed: ${t.message ?: t.javaClass.simpleName}"
+                        )
+                    }
                 }
                 updateNotification(force = true)
             } finally {
