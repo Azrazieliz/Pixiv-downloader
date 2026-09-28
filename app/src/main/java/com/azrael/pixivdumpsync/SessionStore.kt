@@ -12,6 +12,8 @@ object SessionStore {
     private const val FOLLOWING_FEED_CURSOR_KEY = "following_feed_cursor"
     private const val FOLLOWING_PREVIEW_KEY = "following_preview_json"
     private const val BACKGROUND_ARTIST_OFFSET_KEY = "background_artist_offset"
+    private const val LAST_AUTO_SYNC_AT_KEY = "last_auto_sync_at"
+    private const val LAST_AUTO_SYNC_RESULT_KEY = "last_auto_sync_result"
 
     fun normalizeCookieInput(raw: String): String {
         var value = raw.trim()
@@ -135,4 +137,20 @@ object SessionStore {
             .putInt(BACKGROUND_ARTIST_OFFSET_KEY, value.coerceAtLeast(0))
             .apply()
     }
+
+    fun setLastAutoSyncResult(context: Context, result: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putLong(LAST_AUTO_SYNC_AT_KEY, System.currentTimeMillis())
+            .putString(LAST_AUTO_SYNC_RESULT_KEY, result)
+            .apply()
+    }
+
+    fun lastAutoSyncAt(context: Context): Long =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getLong(LAST_AUTO_SYNC_AT_KEY, 0L)
+
+    fun lastAutoSyncResult(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(LAST_AUTO_SYNC_RESULT_KEY, "Never run") ?: "Never run"
 }
