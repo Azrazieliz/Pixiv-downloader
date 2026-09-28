@@ -237,13 +237,15 @@ class SyncEngine(private val context: Context) {
         val cursor = SessionStore.followingFeedCursor(context)
         val allItems = mutableListOf<PixivApi.ArtworkPreview>()
         var newestId: String? = null
-        val maxPages = if (cursor.isNullOrBlank()) 1 else 10
+        var pageNumber = 1
 
-        for (pageNumber in 1..maxPages) {
+        while (true) {
             if (!SyncControl.checkpoint()) return
 
             val page = api.followingFeedPage(pageNumber)
             if (newestId == null) newestId = page.items.firstOrNull()?.id
+
+            val previousSize = allItems.size
             allItems += page.items.filter { candidate ->
                 allItems.none { it.id == candidate.id }
             }
@@ -251,7 +253,12 @@ class SyncEngine(private val context: Context) {
             if (!cursor.isNullOrBlank() && page.items.any { it.id == cursor }) {
                 break
             }
+
+            if (cursor.isNullOrBlank()) break
             if (page.isLastPage || page.items.isEmpty()) break
+            if (allItems.size == previousSize) break
+
+            pageNumber++
         }
 
         if (cursor.isNullOrBlank()) {
