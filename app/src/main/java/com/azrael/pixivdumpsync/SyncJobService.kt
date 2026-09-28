@@ -53,6 +53,10 @@ class SyncJobService : JobService() {
 
     override fun onStopJob(params: JobParameters?): Boolean {
         SyncControl.stop()
+        SessionStore.setLastAutoSyncResult(
+            applicationContext,
+            "Interrupted by Android • retry scheduled"
+        )
         return true
     }
 
