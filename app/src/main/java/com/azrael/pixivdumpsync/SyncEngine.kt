@@ -4,6 +4,10 @@ import android.content.Context
 import java.net.UnknownHostException
 import java.text.DateFormat
 import java.util.Date
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class SyncEngine(private val context: Context) {
     data class Stats(
@@ -21,6 +25,16 @@ class SyncEngine(private val context: Context) {
         SKIPPED,
         STOPPED
     }
+
+    private data class WorkTask(
+        val artistId: String,
+        val id: String
+    )
+
+    private data class ParallelBatchResult(
+        val hadError: Boolean
+    )
+
 
     fun run(
         mode: SyncMode,
@@ -662,6 +676,102 @@ class SyncEngine(private val context: Context) {
         )
     }
 
+    private fun syncWorkTasksParallel(
+        tasks: List<WorkTask>,
+        stats: Stats,
+        progressLabel: String,
+        progress: (String) -> Unit
+    ): ParallelBatchResult {
+        if (tasks.isEmpty()) return ParallelBatchResult(hadError = false)
+
+        val workerCount = minOf(MAX_PARALLEL_WORKS, tasks.size)
+        val nextIndex = AtomicInteger(0)
+        val completedCount = AtomicInteger(0)
+        val hadError = AtomicBoolean(false)
+        val fatal = AtomicReference<Throwable?>(null)
+        val executor = Executors.newFixedThreadPool(workerCount)
+
+        try {
+            val futures = List(workerCount) {
+                executor.submit {
+                    val localStats = Stats()
+                    AppDb(context).use { workerDb ->
+                        val workerApi = PixivApi(context)
+
+                        while (
+                            fatal.get() == null &&
+                            SyncControl.checkpoint()
+                        ) {
+                            val index = nextIndex.getAndIncrement()
+                            if (index >= tasks.size) break
+
+                            val task = tasks[index]
+                            localStats.worksSeen++
+
+                            try {
+                                if (isCompleteOnDisk(workerDb, task.id)) {
+                                    localStats.skippedDone++
+                                } else {
+                                    when (
+                                        syncWork(
+                                            db = workerDb,
+                                            api = workerApi,
+                                            expectedArtistId = task.artistId,
+                                            id = task.id,
+                                            stats = localStats
+                                        )
+                                    ) {
+                                        WorkResult.DONE,
+                                        WorkResult.SKIPPED -> Unit
+                                        WorkResult.STOPPED -> break
+                                    }
+                                }
+                            } catch (t: Throwable) {
+                                if (SyncControl.isStopping()) break
+                                hadError.set(true)
+                                localStats.errors++
+
+                                if (
+                                    t is HttpStatusException && t.code == 429 ||
+                                    isGlobalNetworkError(t)
+                                ) {
+                                    fatal.compareAndSet(null, t)
+                                }
+                            } finally {
+                                val done = completedCount.incrementAndGet()
+                                val message = "$progressLabel • $done/${tasks.size}"
+                                SyncControl.updateMessage(message)
+                                progress(message)
+                            }
+                        }
+                    }
+
+                    synchronized(stats) {
+                        stats.worksSeen += localStats.worksSeen
+                        stats.worksCompleted += localStats.worksCompleted
+                        stats.pagesDownloaded += localStats.pagesDownloaded
+                        stats.skippedDone += localStats.skippedDone
+                        stats.skippedUgoira += localStats.skippedUgoira
+                        stats.errors += localStats.errors
+                    }
+                }
+            }
+
+            futures.forEach { future ->
+                runCatching { future.get() }
+                    .onFailure { error ->
+                        hadError.set(true)
+                        fatal.compareAndSet(null, error.cause ?: error)
+                    }
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        fatal.get()?.let { throw it }
+        return ParallelBatchResult(hadError = hadError.get())
+    }
+
     private fun syncWork(
         db: AppDb,
         api: PixivApi,
@@ -829,4 +939,8 @@ class SyncEngine(private val context: Context) {
             SyncMode.BACKFILL -> "Archive backfill"
             SyncMode.DIRECT -> "Direct download"
         }
+
+    companion object {
+        private const val MAX_PARALLEL_WORKS = 3
+    }
 }
