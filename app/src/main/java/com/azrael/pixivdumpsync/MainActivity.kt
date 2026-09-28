@@ -63,6 +63,13 @@ class MainActivity : Activity() {
                 renderArtists()
                 lastSyncStatus.text =
                     "Last run • ${SessionStore.lastSyncSummary(this@MainActivity)}"
+                if (::autoSyncStatus.isInitialized) {
+                    autoSyncStatus.text = if (SessionStore.autoSync(this@MainActivity)) {
+                        "Auto sync • ${SessionStore.lastAutoSyncResult(this@MainActivity)}"
+                    } else {
+                        "Auto sync • disabled"
+                    }
+                }
             }
 
             lastSyncRunning = running
@@ -323,7 +330,10 @@ class MainActivity : Activity() {
 
                 if (checked) {
                     if (SessionStore.isLoggedIn(this@MainActivity)) {
-                        startFeedSyncNow(showToast = true)
+                        startFeedSyncNow(
+                            showToast = true,
+                            autoTriggered = SessionStore.autoSync(this@MainActivity)
+                        )
                     }
                 } else {
                     Toast.makeText(
@@ -376,7 +386,10 @@ class MainActivity : Activity() {
                         SessionStore.followingFeedEnabled(this@MainActivity) &&
                         SessionStore.isLoggedIn(this@MainActivity)
                     ) {
-                        startFeedSyncNow(showToast = false)
+                        startFeedSyncNow(
+                            showToast = false,
+                            autoTriggered = true
+                        )
                     } else {
                         Scheduler.runSoon(this@MainActivity)
                     }
@@ -1218,7 +1231,10 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun startFeedSyncNow(showToast: Boolean) {
+    private fun startFeedSyncNow(
+        showToast: Boolean,
+        autoTriggered: Boolean = false
+    ) {
         if (!SessionStore.isLoggedIn(this)) return
         if (!SessionStore.followingFeedEnabled(this)) return
 
@@ -1232,6 +1248,7 @@ class MainActivity : Activity() {
             .putExtra(SyncForegroundService.EXTRA_MODE, SyncMode.LIVE.name)
             .putExtra(SyncForegroundService.EXTRA_SELECTED_ONLY, false)
             .putExtra(SyncForegroundService.EXTRA_FEED_ONLY, true)
+            .putExtra(SyncForegroundService.EXTRA_AUTO_TRIGGERED, autoTriggered)
 
         startForegroundService(intent)
         if (showToast) {
