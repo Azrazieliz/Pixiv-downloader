@@ -17,6 +17,8 @@ object Scheduler {
         }
 
         val scheduler = context.getSystemService(JobScheduler::class.java)
+        if (scheduler.allPendingJobs.any { it.id == PERIODIC_JOB_ID }) return
+
         val job = JobInfo.Builder(
             PERIODIC_JOB_ID,
             ComponentName(context, SyncJobService::class.java)
