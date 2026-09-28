@@ -20,6 +20,7 @@ class SyncForegroundService : Service() {
         const val EXTRA_SELECTED_ONLY = "selected_only"
         const val EXTRA_TARGET_ARTIST_ID = "target_artist_id"
         const val EXTRA_TARGET_ARTWORK_ID = "target_artwork_id"
+        const val EXTRA_FEED_ONLY = "feed_only"
 
         private const val CHANNEL_ID = "kuroha_sync"
         private const val NOTIFICATION_ID = 41
@@ -70,6 +71,7 @@ class SyncForegroundService : Service() {
         val selectedOnly = intent?.getBooleanExtra(EXTRA_SELECTED_ONLY, false) ?: false
         val targetArtistId = intent?.getStringExtra(EXTRA_TARGET_ARTIST_ID)
         val targetArtworkId = intent?.getStringExtra(EXTRA_TARGET_ARTWORK_ID)
+        val feedOnly = intent?.getBooleanExtra(EXTRA_FEED_ONLY, false) ?: false
 
         if (currentRun?.isDone == false) {
             return START_NOT_STICKY
@@ -83,7 +85,8 @@ class SyncForegroundService : Service() {
                     mode = mode,
                     selectedOnly = selectedOnly,
                     targetArtistId = targetArtistId,
-                    targetArtworkId = targetArtworkId
+                    targetArtworkId = targetArtworkId,
+                    feedOnly = feedOnly
                 ) {
                     updateNotification()
                 }
