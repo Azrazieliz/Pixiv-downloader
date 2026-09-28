@@ -691,7 +691,14 @@ class SyncEngine(private val context: Context) {
             return WorkResult.SKIPPED
         }
 
-        val urls = api.pageOriginalUrls(id)
+        val urls = if (
+            detail.pageCount == 1 &&
+            !detail.originalUrl.isNullOrBlank()
+        ) {
+            listOf(detail.originalUrl)
+        } else {
+            api.pageOriginalUrls(id)
+        }
 
         db.upsertWork(
             id,
