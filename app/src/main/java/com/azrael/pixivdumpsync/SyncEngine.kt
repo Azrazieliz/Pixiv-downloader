@@ -27,6 +27,7 @@ class SyncEngine(private val context: Context) {
         selectedOnly: Boolean = false,
         targetArtistId: String? = null,
         targetArtworkId: String? = null,
+        feedOnly: Boolean = false,
         maxArtists: Int? = null,
         artistOffset: Int = 0,
         queueLiveIfBusy: Boolean = true,
@@ -60,6 +61,7 @@ class SyncEngine(private val context: Context) {
                     api = api,
                     selectedOnly = selectedOnly,
                     targetArtistId = targetArtistId,
+                    feedOnly = feedOnly,
                     maxArtists = maxArtists,
                     artistOffset = artistOffset,
                     stats = stats,
@@ -102,6 +104,7 @@ class SyncEngine(private val context: Context) {
                     api = api,
                     selectedOnly = false,
                     targetArtistId = null,
+                    feedOnly = false,
                     maxArtists = null,
                     artistOffset = 0,
                     stats = stats,
@@ -128,6 +131,7 @@ class SyncEngine(private val context: Context) {
         api: PixivApi,
         selectedOnly: Boolean,
         targetArtistId: String?,
+        feedOnly: Boolean,
         maxArtists: Int?,
         artistOffset: Int,
         stats: Stats,
@@ -135,7 +139,10 @@ class SyncEngine(private val context: Context) {
     ) {
         SyncControl.setMode(SyncMode.LIVE)
 
-        if (targetArtistId == null && SessionStore.followingFeedEnabled(context)) {
+        if (
+            targetArtistId == null &&
+            (feedOnly || SessionStore.followingFeedEnabled(context))
+        ) {
             val feedMessage = "Following feed • checking newest works"
             SyncControl.updateMessage(feedMessage)
             progress(feedMessage)
@@ -151,6 +158,10 @@ class SyncEngine(private val context: Context) {
                     return
                 }
             }
+        }
+
+        if (feedOnly) {
+            return
         }
 
         val allArtists = when {
@@ -384,6 +395,7 @@ class SyncEngine(private val context: Context) {
                 api = api,
                 selectedOnly = false,
                 targetArtistId = null,
+                feedOnly = false,
                 maxArtists = null,
                 artistOffset = 0,
                 stats = stats,

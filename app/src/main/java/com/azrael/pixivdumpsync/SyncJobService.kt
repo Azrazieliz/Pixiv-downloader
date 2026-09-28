@@ -11,7 +11,8 @@ class SyncJobService : JobService() {
         if (
             params == null ||
             !SessionStore.isLoggedIn(this) ||
-            !SessionStore.autoSync(this)
+            !SessionStore.autoSync(this) ||
+            !SessionStore.followingFeedEnabled(this)
         ) {
             return false
         }
@@ -22,17 +23,11 @@ class SyncJobService : JobService() {
 
         executor.execute {
             try {
-                val offset = SessionStore.backgroundArtistOffset(applicationContext)
-                val stats = SyncEngine(applicationContext).run(
+                SyncEngine(applicationContext).run(
                     mode = SyncMode.LIVE,
                     selectedOnly = false,
-                    maxArtists = BACKGROUND_ARTIST_BATCH,
-                    artistOffset = offset,
+                    feedOnly = true,
                     queueLiveIfBusy = false
-                )
-                SessionStore.setBackgroundArtistOffset(
-                    applicationContext,
-                    offset + stats.artists.coerceAtLeast(BACKGROUND_ARTIST_BATCH)
                 )
                 jobFinished(params, false)
             } catch (_: Throwable) {
@@ -52,7 +47,4 @@ class SyncJobService : JobService() {
         super.onDestroy()
     }
 
-    companion object {
-        private const val BACKGROUND_ARTIST_BATCH = 8
-    }
 }
