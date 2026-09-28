@@ -316,6 +316,21 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
         return ArtistProgress(done, partial, skipped, knownTotal)
     }
 
+    fun hasWorkRecord(illustId: String): Boolean {
+        readableDatabase.query(
+            "works",
+            arrayOf("illust_id"),
+            "illust_id=?",
+            arrayOf(illustId),
+            null,
+            null,
+            null,
+            "1"
+        ).use { c ->
+            return c.moveToFirst()
+        }
+    }
+
     fun isWorkDoneAndBookmarked(illustId: String): Boolean {
         readableDatabase.query(
             "works",

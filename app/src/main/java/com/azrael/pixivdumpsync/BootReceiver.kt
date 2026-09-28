@@ -12,6 +12,7 @@ class BootReceiver : BroadcastReceiver() {
         ) {
             if (SessionStore.autoSync(context)) {
                 Scheduler.ensure(context)
+                Scheduler.runSoon(context)
             }
         }
     }

@@ -39,6 +39,7 @@ class MainActivity : Activity() {
     private lateinit var backfillButton: Button
     private lateinit var followingFeedSwitch: Switch
     private lateinit var autoSyncSwitch: Switch
+    private lateinit var autoSyncStatus: TextView
     private lateinit var followImportButton: Button
     private lateinit var followingPreviewStatus: TextView
     private lateinit var followingPreviewRow: LinearLayout
@@ -62,6 +63,13 @@ class MainActivity : Activity() {
                 renderArtists()
                 lastSyncStatus.text =
                     "Last run • ${SessionStore.lastSyncSummary(this@MainActivity)}"
+                if (::autoSyncStatus.isInitialized) {
+                    autoSyncStatus.text = if (SessionStore.autoSync(this@MainActivity)) {
+                        "Auto sync • ${SessionStore.lastAutoSyncResult(this@MainActivity)}"
+                    } else {
+                        "Auto sync • disabled"
+                    }
+                }
             }
 
             lastSyncRunning = running
@@ -79,6 +87,7 @@ class MainActivity : Activity() {
         requestNotificationPermissionIfNeeded()
         if (SessionStore.autoSync(this)) {
             Scheduler.ensure(this)
+            Scheduler.runSoon(this)
         } else {
             Scheduler.cancel(this)
         }
@@ -317,6 +326,22 @@ class MainActivity : Activity() {
             )
             setOnCheckedChangeListener { _, checked ->
                 SessionStore.setFollowingFeedEnabled(this@MainActivity, checked)
+                Scheduler.ensure(this@MainActivity)
+
+                if (checked) {
+                    if (SessionStore.isLoggedIn(this@MainActivity)) {
+                        startFeedSyncNow(
+                            showToast = true,
+                            autoTriggered = SessionStore.autoSync(this@MainActivity)
+                        )
+                    }
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Following feed disabled",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         }
         feedRow.addView(followingFeedSwitch)
@@ -335,7 +360,7 @@ class MainActivity : Activity() {
             UiKit.title(this, 14.5f)
         })
         autoText.addView(TextView(this).apply {
-            text = "Periodically check the Following feed and watched artists in the background."
+            text = "Periodically sync new Following-feed artworks in the background."
             UiKit.body(this, 11.5f)
             setPadding(0, dp(2), dp(8), 0)
         })
@@ -357,10 +382,24 @@ class MainActivity : Activity() {
                 SessionStore.setAutoSync(this@MainActivity, checked)
                 if (checked) {
                     Scheduler.ensure(this@MainActivity)
-                    Scheduler.runSoon(this@MainActivity)
+                    if (
+                        SessionStore.followingFeedEnabled(this@MainActivity) &&
+                        SessionStore.isLoggedIn(this@MainActivity)
+                    ) {
+                        startFeedSyncNow(
+                            showToast = false,
+                            autoTriggered = true
+                        )
+                    } else {
+                        Scheduler.runSoon(this@MainActivity)
+                    }
                     Toast.makeText(
                         this@MainActivity,
-                        "Automatic sync enabled",
+                        if (SessionStore.followingFeedEnabled(this@MainActivity)) {
+                            "Automatic sync enabled • checking feed now"
+                        } else {
+                            "Automatic sync enabled • enable Following feed to use it"
+                        },
                         Toast.LENGTH_SHORT
                     ).show()
                 } else {
@@ -375,6 +414,12 @@ class MainActivity : Activity() {
         }
         autoRow.addView(autoSyncSwitch)
         syncCard.addView(autoRow)
+
+        autoSyncStatus = TextView(this).apply {
+            UiKit.body(this, 11.5f)
+            setPadding(0, dp(7), 0, 0)
+        }
+        syncCard.addView(autoSyncStatus)
 
         root.addView(syncCard, cardParams())
 
@@ -521,6 +566,13 @@ class MainActivity : Activity() {
             if (SessionStore.isLoggedIn(this)) UiKit.success else UiKit.danger
         )
         lastSyncStatus.text = "Last run • ${SessionStore.lastSyncSummary(this)}"
+        if (::autoSyncStatus.isInitialized) {
+            autoSyncStatus.text = if (SessionStore.autoSync(this)) {
+                "Auto sync • ${SessionStore.lastAutoSyncResult(this)}"
+            } else {
+                "Auto sync • disabled"
+            }
+        }
         updateSyncControls()
         renderArtists()
     }
@@ -1176,6 +1228,35 @@ class MainActivity : Activity() {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }.onFailure {
             Toast.makeText(this, "Could not open Pixiv link", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun startFeedSyncNow(
+        showToast: Boolean,
+        autoTriggered: Boolean = false
+    ) {
+        if (!SessionStore.isLoggedIn(this)) return
+        if (!SessionStore.followingFeedEnabled(this)) return
+
+        if (SyncControl.snapshot().running) {
+            Scheduler.runSoon(this)
+            return
+        }
+
+        val intent = Intent(this, SyncForegroundService::class.java)
+            .setAction(SyncForegroundService.ACTION_START)
+            .putExtra(SyncForegroundService.EXTRA_MODE, SyncMode.LIVE.name)
+            .putExtra(SyncForegroundService.EXTRA_SELECTED_ONLY, false)
+            .putExtra(SyncForegroundService.EXTRA_FEED_ONLY, true)
+            .putExtra(SyncForegroundService.EXTRA_AUTO_TRIGGERED, autoTriggered)
+
+        startForegroundService(intent)
+        if (showToast) {
+            Toast.makeText(
+                this,
+                "Syncing new Following artworks",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 

@@ -241,9 +241,48 @@ class SyncEngine(private val context: Context) {
         }
 
         if (cursor.isNullOrBlank()) {
+            val pendingFromEarlierRun = allItems.filter { item ->
+                db.hasWorkRecord(item.id) && !isCompleteOnDisk(db, item.id)
+            }
+
+            if (pendingFromEarlierRun.isNotEmpty()) {
+                progress(
+                    "Following feed • resuming ${pendingFromEarlierRun.size} incomplete work(s)"
+                )
+
+                var resumeHadError = false
+                for ((index, item) in pendingFromEarlierRun.asReversed().withIndex()) {
+                    if (!SyncControl.checkpoint()) return
+
+                    stats.worksSeen++
+                    val message =
+                        "Following feed resume • ${index + 1}/${pendingFromEarlierRun.size}"
+                    SyncControl.updateMessage(message)
+                    progress(message)
+
+                    try {
+                        when (syncWork(db, api, item.userId, item.id, stats)) {
+                            WorkResult.DONE, WorkResult.SKIPPED -> Unit
+                            WorkResult.STOPPED -> return
+                        }
+                    } catch (t: Throwable) {
+                        if (SyncControl.isStopping()) return
+                        resumeHadError = true
+                        stats.errors++
+                        progress("Following feed error ${item.id}: ${t.message}")
+                        if (t is HttpStatusException && t.code == 429) throw t
+                    }
+                }
+
+                if (resumeHadError) {
+                    progress("Following feed • incomplete work(s) still pending")
+                    return
+                }
+            }
+
             if (newestId != null) {
                 SessionStore.setFollowingFeedCursor(context, newestId)
-                progress("Following feed ready • baseline set; future new works will sync")
+                progress("Following feed ready • baseline established")
             } else {
                 progress("Following feed • no works returned")
             }

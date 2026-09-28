@@ -21,6 +21,7 @@ class SyncForegroundService : Service() {
         const val EXTRA_TARGET_ARTIST_ID = "target_artist_id"
         const val EXTRA_TARGET_ARTWORK_ID = "target_artwork_id"
         const val EXTRA_FEED_ONLY = "feed_only"
+        const val EXTRA_AUTO_TRIGGERED = "auto_triggered"
 
         private const val CHANNEL_ID = "kuroha_sync"
         private const val NOTIFICATION_ID = 41
@@ -72,6 +73,7 @@ class SyncForegroundService : Service() {
         val targetArtistId = intent?.getStringExtra(EXTRA_TARGET_ARTIST_ID)
         val targetArtworkId = intent?.getStringExtra(EXTRA_TARGET_ARTWORK_ID)
         val feedOnly = intent?.getBooleanExtra(EXTRA_FEED_ONLY, false) ?: false
+        val autoTriggered = intent?.getBooleanExtra(EXTRA_AUTO_TRIGGERED, false) ?: false
 
         if (currentRun?.isDone == false) {
             return START_NOT_STICKY
@@ -81,7 +83,10 @@ class SyncForegroundService : Service() {
 
         currentRun = executor.submit {
             try {
-                SyncEngine(applicationContext).run(
+                if (autoTriggered) {
+                    SessionStore.setLastAutoSyncResult(applicationContext, "Running")
+                }
+                val stats = SyncEngine(applicationContext).run(
                     mode = mode,
                     selectedOnly = selectedOnly,
                     targetArtistId = targetArtistId,
@@ -90,7 +95,23 @@ class SyncForegroundService : Service() {
                 ) {
                     updateNotification()
                 }
+                if (autoTriggered) {
+                    SessionStore.setLastAutoSyncResult(
+                        applicationContext,
+                        if (stats.errors > 0) {
+                            "Finished with ${stats.errors} error(s)"
+                        } else {
+                            "OK • ${stats.worksCompleted} downloaded • ${stats.skippedDone} already done"
+                        }
+                    )
+                }
             } catch (t: Throwable) {
+                if (autoTriggered) {
+                    SessionStore.setLastAutoSyncResult(
+                        applicationContext,
+                        "Failed • ${t.message ?: t.javaClass.simpleName}"
+                    )
+                }
                 val current = SyncControl.snapshot()
                 if (current.running) {
                     if (

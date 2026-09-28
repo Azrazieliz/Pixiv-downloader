@@ -23,14 +23,28 @@ class SyncJobService : JobService() {
 
         executor.execute {
             try {
-                SyncEngine(applicationContext).run(
+                SessionStore.setLastAutoSyncResult(
+                    applicationContext,
+                    "Running"
+                )
+                val stats = SyncEngine(applicationContext).run(
                     mode = SyncMode.LIVE,
                     selectedOnly = false,
                     feedOnly = true,
                     queueLiveIfBusy = false
                 )
-                jobFinished(params, false)
-            } catch (_: Throwable) {
+                val result = if (stats.errors > 0) {
+                    "Finished with ${stats.errors} error(s)"
+                } else {
+                    "OK • ${stats.worksCompleted} downloaded • ${stats.skippedDone} already done"
+                }
+                SessionStore.setLastAutoSyncResult(applicationContext, result)
+                jobFinished(params, stats.errors > 0)
+            } catch (t: Throwable) {
+                SessionStore.setLastAutoSyncResult(
+                    applicationContext,
+                    "Failed • ${t.message ?: t.javaClass.simpleName}"
+                )
                 jobFinished(params, true)
             }
         }

@@ -11,7 +11,11 @@ object Scheduler {
     private const val FIFTEEN_MINUTES = 15L * 60L * 1000L
 
     fun ensure(context: Context) {
-        if (!SessionStore.autoSync(context)) {
+        if (
+            !SessionStore.autoSync(context) ||
+            !SessionStore.followingFeedEnabled(context) ||
+            !SessionStore.isLoggedIn(context)
+        ) {
             cancel(context)
             return
         }
@@ -32,15 +36,22 @@ object Scheduler {
     }
 
     fun runSoon(context: Context) {
-        if (!SessionStore.autoSync(context) || !SessionStore.isLoggedIn(context)) return
+        if (
+            !SessionStore.autoSync(context) ||
+            !SessionStore.followingFeedEnabled(context) ||
+            !SessionStore.isLoggedIn(context)
+        ) return
 
         val scheduler = context.getSystemService(JobScheduler::class.java)
+        if (scheduler.allPendingJobs.any { it.id == IMMEDIATE_JOB_ID }) return
+
         val job = JobInfo.Builder(
             IMMEDIATE_JOB_ID,
             ComponentName(context, SyncJobService::class.java)
         )
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setMinimumLatency(1_000L)
+            .setOverrideDeadline(60_000L)
             .setBackoffCriteria(
                 30L * 1000L,
                 JobInfo.BACKOFF_POLICY_EXPONENTIAL
