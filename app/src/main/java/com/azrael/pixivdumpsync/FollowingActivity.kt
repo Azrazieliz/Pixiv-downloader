@@ -20,6 +20,7 @@ class FollowingActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var list: LinearLayout
     private lateinit var refreshButton: Button
+    private lateinit var syncButton: Button
     private lateinit var stopButton: Button
 
     private val handler = Handler(Looper.getMainLooper())
@@ -38,6 +39,7 @@ class FollowingActivity : Activity() {
                 lastItems.isEmpty() -> "Latest works from followed artists"
                 else -> "Latest Following works • ${lastItems.size} shown"
             }
+            syncButton.isEnabled = !snapshot.running && !loading
             stopButton.isEnabled = snapshot.running && !snapshot.stopping
 
             if (lastRunning && !snapshot.running && lastItems.isNotEmpty()) {
@@ -87,7 +89,7 @@ class FollowingActivity : Activity() {
             UiKit.title(this, 27f)
         })
         root.addView(TextView(this).apply {
-            text = "Download individual artworks from your Pixiv Following feed"
+            text = "Sync every new artwork from your Pixiv Following feed"
             UiKit.body(this, 13f)
             setPadding(0, dp(3), 0, 0)
         })
@@ -145,8 +147,23 @@ class FollowingActivity : Activity() {
         ))
         controls.addView(controlHeader)
 
+        val syncActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(10), 0, 0)
+        }
+
+        syncButton = Button(this).apply {
+            text = "Sync new"
+            UiKit.stylePrimaryButton(this@FollowingActivity, this)
+            setOnClickListener { startFeedSync() }
+        }
+        syncActions.addView(
+            syncButton,
+            LinearLayout.LayoutParams(0, dp(48), 1f)
+        )
+
         stopButton = Button(this).apply {
-            text = "Stop download"
+            text = "Stop"
             UiKit.styleDangerButton(this@FollowingActivity, this)
             isEnabled = false
             setOnClickListener {
@@ -156,13 +173,16 @@ class FollowingActivity : Activity() {
                 )
             }
         }
-        controls.addView(stopButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(44)
-        ).apply { topMargin = dp(10) })
+        syncActions.addView(
+            stopButton,
+            LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                leftMargin = dp(8)
+            }
+        )
+        controls.addView(syncActions)
 
         controls.addView(TextView(this).apply {
-            text = "Tap Download on any artwork. Kuroha saves it to Downloads/Kuroha and bookmarks it only after all image pages are stored."
+            text = "Sync new downloads every Following-feed artwork since the last completed feed sync. Already completed works are skipped; failed or incomplete works stay pending and are retried next time. Backfill is only for older artist history."
             UiKit.body(this, 11.5f)
             setPadding(0, dp(10), 0, 0)
         })
@@ -336,6 +356,34 @@ class FollowingActivity : Activity() {
         card.addView(actions)
 
         return card
+    }
+
+    private fun startFeedSync() {
+        if (!SessionStore.isLoggedIn(this)) {
+            Toast.makeText(this, "Connect your Pixiv account first", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (SyncControl.snapshot().running) {
+            Toast.makeText(
+                this,
+                "A sync or download is already running.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val intent = Intent(this, SyncForegroundService::class.java)
+            .setAction(SyncForegroundService.ACTION_START)
+            .putExtra(SyncForegroundService.EXTRA_MODE, SyncMode.LIVE.name)
+            .putExtra(SyncForegroundService.EXTRA_SELECTED_ONLY, false)
+            .putExtra(SyncForegroundService.EXTRA_FEED_ONLY, true)
+
+        startForegroundService(intent)
+        Toast.makeText(
+            this,
+            "Syncing new Following artworks",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun startDirectDownload(preview: PixivApi.ArtworkPreview) {
