@@ -5,7 +5,6 @@ import android.net.Uri
 import android.provider.MediaStore
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -23,7 +22,7 @@ import kotlin.math.max
 class TeraboxUploader(private val context: Context) {
     private data class Domains(val api: String, val upload: String)
     private data class LocalFile(val uri: Uri, val size: Long)
-    private const val TARGET_CHUNK = 8 * 1024 * 1024
+    private val TARGET_CHUNK = 8 * 1024 * 1024
 
     fun uploadArtwork(filename: String): String {
         if (!filename.matches(Regex("[0-9]+_p[0-9]+\\.(jpg|jpeg|png|gif|webp)"))) {
@@ -197,6 +196,7 @@ class TeraboxUploader(private val context: Context) {
             connection.outputStream.use { it.write(form) }
             parseResponse(connection)
         } finally {
+            NetworkRequestRegistry.unregister(connection)
             connection.disconnect()
         }
     }
@@ -229,6 +229,7 @@ class TeraboxUploader(private val context: Context) {
             }
             parseResponse(connection)
         } finally {
+            NetworkRequestRegistry.unregister(connection)
             connection.disconnect()
         }
     }
@@ -247,6 +248,7 @@ class TeraboxUploader(private val context: Context) {
 
     private fun openConnection(url: URL): HttpURLConnection =
         (url.openConnection() as HttpURLConnection).apply {
+            NetworkRequestRegistry.register(this)
             instanceFollowRedirects = false
             connectTimeout = 12_000
             readTimeout = 60_000
