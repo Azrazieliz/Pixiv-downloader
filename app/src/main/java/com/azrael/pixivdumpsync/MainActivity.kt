@@ -442,6 +442,39 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
         ).apply { topMargin = dp(12) })
         root.addView(filterCard, cardParams())
+        root.addView(section("T ERABOX CLOUD BACKUP".replace(" ", "")), sectionParams())
+        val cloudCard = card()
+        cloudCard.addView(TextView(this).apply {
+            text = "TeraBox Open Platform"
+            UiKit.title(this, 16f)
+        })
+        cloudCard.addView(TextView(this).apply {
+            text = "Optional API upload with a durable retry queue. Local copies are retained. Requires an authorized Open Platform access token."
+            UiKit.body(this, 12f)
+            setPadding(0, dp(8), 0, 0)
+        })
+        cloudCard.addView(Button(this).apply {
+            text = "TeraBox settings"
+            UiKit.styleSecondaryButton(this@MainActivity, this)
+            setOnClickListener { TeraboxSettingsDialog.show(this@MainActivity) }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(12) })
+        cloudCard.addView(Button(this).apply {
+            text = "Upload existing / pending"
+            UiKit.stylePrimaryButton(this@MainActivity, this)
+            setOnClickListener {
+                if (!TeraboxSettings.enabled(this@MainActivity) ||
+                    !TeraboxSettings.isConfigured(this@MainActivity)) {
+                    Toast.makeText(this@MainActivity, "Configure and enable TeraBox first", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                CloudUploadQueue(this@MainActivity).use { queue ->
+                    FileStore.listArtworkFiles(this@MainActivity).forEach { queue.enqueue(it) }
+                }
+                startSync(SyncMode.CLOUD)
+            }
+        }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(8) })
+        root.addView(cloudCard, cardParams())
+
 
 
         root.addView(section("FOLLOWING"), sectionParams())
@@ -1306,12 +1339,17 @@ class MainActivity : Activity() {
     }
 
     private fun startSync(mode: SyncMode, targetArtistId: String? = null) {
-        if (!SessionStore.isLoggedIn(this)) {
+        if (mode != SyncMode.CLOUD && !SessionStore.isLoggedIn(this)) {
             Toast.makeText(this, "Connect your Pixiv account first", Toast.LENGTH_LONG).show()
             return
         }
+        if (mode == SyncMode.CLOUD && (!TeraboxSettings.enabled(this) ||
+            !TeraboxSettings.isConfigured(this))) {
+            Toast.makeText(this, "Configure and enable TeraBox first", Toast.LENGTH_LONG).show()
+            return
+        }
 
-        AppDb(this).use { db ->
+        if (mode != SyncMode.CLOUD) AppDb(this).use { db ->
             val eligible = if (targetArtistId != null) {
                 listOfNotNull(db.artist(targetArtistId))
             } else if (mode == SyncMode.LIVE) {
@@ -1352,6 +1390,8 @@ class MainActivity : Activity() {
             this,
             if (targetArtistId != null) {
                 "Retry started"
+            } else if (mode == SyncMode.CLOUD) {
+                "TeraBox upload started"
             } else if (mode == SyncMode.LIVE) {
                 if (SessionStore.followingFeedEnabled(this)) {
                     "Checking your Following feed and selected watched artists"
@@ -1392,6 +1432,7 @@ class MainActivity : Activity() {
             SyncMode.LIVE -> "Live Sync"
             SyncMode.BACKFILL -> "Archive Backfill"
             SyncMode.DIRECT -> "Direct Download"
+            SyncMode.CLOUD -> "TeraBox Upload"
             null -> ""
         }
 
