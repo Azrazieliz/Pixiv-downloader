@@ -112,6 +112,10 @@ class SyncEngine(private val context: Context) {
                 "${modeLabel(mode)} complete"
             }
 
+            if (mode != SyncMode.CLOUD && !SyncControl.snapshot().stopping) {
+                drainCloudQueue(stats, progress, 20)
+            }
+
             while (
                 !SyncControl.snapshot().stopping &&
                 SyncControl.completeOrContinueWithQueuedLive(finalMessage)
@@ -128,11 +132,10 @@ class SyncEngine(private val context: Context) {
                     stats = stats,
                     progress = progress
                 )
+                if (!SyncControl.snapshot().stopping) {
+                    drainCloudQueue(stats, progress, 20)
+                }
                 finalMessage = "Live sync complete"
-            }
-
-            if (mode != SyncMode.CLOUD && !SyncControl.snapshot().stopping) {
-                drainCloudQueue(stats, progress, 20)
             }
 
             if (SyncControl.snapshot().running) {
