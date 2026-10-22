@@ -3,7 +3,8 @@ package com.azrael.pixivdumpsync
 enum class SyncMode {
     LIVE,
     BACKFILL,
-    DIRECT
+    DIRECT,
+    CLOUD
 }
 
 object SyncControl {
@@ -44,6 +45,7 @@ object SyncControl {
             SyncMode.LIVE -> "Checking for new works…"
             SyncMode.BACKFILL -> "Backfill starting…"
             SyncMode.DIRECT -> "Preparing download…"
+            SyncMode.CLOUD -> "Uploading to TeraBox…"
         }
         true
     }
