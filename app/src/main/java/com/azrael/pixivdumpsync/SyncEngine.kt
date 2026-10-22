@@ -18,6 +18,8 @@ class SyncEngine(private val context: Context) {
         var skippedDone: Int = 0,
         var skippedUgoira: Int = 0,
         var skippedTags: Int = 0,
+        var cloudUploaded: Int = 0,
+        var cloudErrors: Int = 0,
         var errors: Int = 0
     )
 
@@ -65,15 +67,16 @@ class SyncEngine(private val context: Context) {
         NetworkCookies.install(context)
         val db = AppDb(context)
         db.clearTransientNetworkErrors()
-        val api = PixivApi(context)
+        val api = if (mode == SyncMode.CLOUD) null else PixivApi(context)
         var finalMessage = "Idle"
         var released = false
 
         try {
             when (mode) {
+                SyncMode.CLOUD -> drainCloudQueue(stats, progress, 10000)
                 SyncMode.LIVE -> runLivePass(
                     db = db,
-                    api = api,
+                    api = requireNotNull(api),
                     selectedOnly = selectedOnly,
                     targetArtistId = targetArtistId,
                     feedOnly = feedOnly,
@@ -84,14 +87,14 @@ class SyncEngine(private val context: Context) {
                 )
                 SyncMode.BACKFILL -> runBackfillPass(
                     db = db,
-                    api = api,
+                    api = requireNotNull(api),
                     targetArtistId = targetArtistId,
                     stats = stats,
                     progress = progress
                 )
                 SyncMode.DIRECT -> runDirectPass(
                     db = db,
-                    api = api,
+                    api = requireNotNull(api),
                     targetArtistId = requireNotNull(targetArtistId) {
                         "Direct download requires an artist ID"
                     },
@@ -116,7 +119,7 @@ class SyncEngine(private val context: Context) {
                 progress("Running queued Live Sync…")
                 runLivePass(
                     db = db,
-                    api = api,
+                    api = requireNotNull(api),
                     selectedOnly = false,
                     targetArtistId = null,
                     feedOnly = false,
@@ -126,6 +129,10 @@ class SyncEngine(private val context: Context) {
                     progress = progress
                 )
                 finalMessage = "Live sync complete"
+            }
+
+            if (mode != SyncMode.CLOUD && !SyncControl.snapshot().stopping) {
+                drainCloudQueue(stats, progress, 20)
             }
 
             if (SyncControl.snapshot().running) {
@@ -801,6 +808,9 @@ class SyncEngine(private val context: Context) {
                 pageIndex,
                 filename
             )
+            if (TeraboxSettings.enabled(context)) {
+                CloudUploadQueue(context).use { it.enqueue(filename) }
+            }
         }
 
         if (!SyncControl.checkpoint()) {
@@ -854,6 +864,44 @@ class SyncEngine(private val context: Context) {
         }
     }
 
+    private fun drainCloudQueue(
+        stats: Stats,
+        progress: (String) -> Unit,
+        maxItems: Int
+    ) {
+        if (!TeraboxSettings.enabled(context) || !TeraboxSettings.isConfigured(context)) {
+            return
+        }
+        CloudUploadQueue(context).use { queue ->
+            val uploads = queue.nextBatch(maxItems, System.currentTimeMillis())
+            if (uploads.isEmpty()) return
+            val client = TeraboxUploader(context)
+            for ((index, item) in uploads.withIndex()) {
+                if (!SyncControl.checkpoint()) return
+                val message = "TeraBox upload ${index + 1}/${uploads.size}"
+                SyncControl.updateMessage(message)
+                progress(message)
+                try {
+                    val remotePath = client.uploadArtwork(item.filename)
+                    queue.uploaded(item.filename, remotePath)
+                    stats.cloudUploaded++
+                } catch (t: Throwable) {
+                    if (SyncControl.isStopping() ||
+                        t is SyncCancelledException || t is InterruptedException
+                    ) return
+                    val message = t.message ?: "Cloud upload failed"
+                    queue.failed(item.filename, message)
+                    stats.cloudErrors++
+                    progress("TeraBox: $message")
+                    if (message.contains("token", ignoreCase = true) ||
+                        message.contains("HTTP 401") ||
+                        message.contains("HTTP 403") ||
+                        message.contains("domain", ignoreCase = true)) break
+                }
+            }
+        }
+    }
+
     private fun finish(
         stats: Stats,
         mode: SyncMode
@@ -869,6 +917,8 @@ class SyncEngine(private val context: Context) {
                 "${stats.worksCompleted} completed, " +
                 "${stats.pagesDownloaded} images, " +
                 "${stats.skippedTags} tag-filtered, " +
+                "${stats.cloudUploaded} cloud uploaded, " +
+                "${stats.cloudErrors} cloud errors, " +
                 "${stats.errors} errors"
 
         SessionStore.setLastSyncSummary(
@@ -893,6 +943,7 @@ class SyncEngine(private val context: Context) {
             SyncMode.LIVE -> "Live sync"
             SyncMode.BACKFILL -> "Archive backfill"
             SyncMode.DIRECT -> "Direct download"
+        SyncMode.CLOUD -> "TeraBox upload"
         }
 
     companion object {
