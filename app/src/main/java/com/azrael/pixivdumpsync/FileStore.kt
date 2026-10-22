@@ -40,6 +40,44 @@ object FileStore {
         return false
     }
 
+    fun findUri(context: Context, filename: String): Uri? {
+        val projection = arrayOf(BaseColumns._ID)
+        val selection =
+            "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND " +
+                "${MediaStore.MediaColumns.RELATIVE_PATH}=?"
+        for (directory in listOf(RELATIVE_DIR, LEGACY_RELATIVE_DIR)) {
+            context.contentResolver.query(
+                COLLECTION_URI, projection, selection, arrayOf(filename, directory), null
+            ).use { cursor ->
+                if (cursor != null && cursor.moveToFirst()) {
+                    return android.content.ContentUris.withAppendedId(
+                        COLLECTION_URI, cursor.getLong(0)
+                    )
+                }
+            }
+        }
+        return null
+    }
+
+    fun listArtworkFiles(context: Context): List<String> {
+        val files = linkedSetOf<String>()
+        val pattern = Regex("[0-9]+_p[0-9]+\\.(jpg|jpeg|png|gif|webp)")
+        for (directory in listOf(RELATIVE_DIR, LEGACY_RELATIVE_DIR)) {
+            context.contentResolver.query(
+                COLLECTION_URI,
+                arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+                "${MediaStore.MediaColumns.RELATIVE_PATH}=?",
+                arrayOf(directory), null
+            ).use { cursor ->
+                if (cursor != null) while (cursor.moveToNext()) {
+                    val filename = cursor.getString(0)
+                    if (filename.matches(pattern)) files += filename
+                }
+            }
+        }
+        return files.toList()
+    }
+
     @Synchronized
     fun saveImage(
         context: Context,

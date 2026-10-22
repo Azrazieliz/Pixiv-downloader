@@ -423,6 +423,60 @@ class MainActivity : Activity() {
 
         root.addView(syncCard, cardParams())
 
+        root.addView(section("DOWNLOAD FILTERS"), sectionParams())
+        val filterCard = card()
+        filterCard.addView(TextView(this).apply {
+            text = "Blocked Pixiv tags"
+            UiKit.title(this, 16f)
+        })
+        filterCard.addView(TextView(this).apply {
+            text = "Artworks containing any blocked tag are skipped before downloading or bookmarking. Enter one exact tag per line; original and English-translated Pixiv tags are checked. Existing files are not deleted."
+            UiKit.body(this, 12f)
+            setPadding(0, dp(8), 0, 0)
+        })
+        filterCard.addView(Button(this).apply {
+            text = "Edit excluded tags"
+            UiKit.styleSecondaryButton(this@MainActivity, this)
+            setOnClickListener { showExcludedTagsDialog() }
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+        ).apply { topMargin = dp(12) })
+        root.addView(filterCard, cardParams())
+        root.addView(section("T ERABOX CLOUD BACKUP".replace(" ", "")), sectionParams())
+        val cloudCard = card()
+        cloudCard.addView(TextView(this).apply {
+            text = "TeraBox Open Platform"
+            UiKit.title(this, 16f)
+        })
+        cloudCard.addView(TextView(this).apply {
+            text = "Optional API upload with a durable retry queue. Local copies are retained. Requires an authorized Open Platform access token."
+            UiKit.body(this, 12f)
+            setPadding(0, dp(8), 0, 0)
+        })
+        cloudCard.addView(Button(this).apply {
+            text = "TeraBox settings"
+            UiKit.styleSecondaryButton(this@MainActivity, this)
+            setOnClickListener { TeraboxSettingsDialog.show(this@MainActivity) }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(12) })
+        cloudCard.addView(Button(this).apply {
+            text = "Upload existing / pending"
+            UiKit.stylePrimaryButton(this@MainActivity, this)
+            setOnClickListener {
+                if (!TeraboxSettings.enabled(this@MainActivity) ||
+                    !TeraboxSettings.isConfigured(this@MainActivity)) {
+                    Toast.makeText(this@MainActivity, "Configure and enable TeraBox first", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                CloudUploadQueue(this@MainActivity).use { queue ->
+                    FileStore.listArtworkFiles(this@MainActivity).forEach { queue.enqueue(it) }
+                }
+                startSync(SyncMode.CLOUD)
+            }
+        }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(8) })
+        root.addView(cloudCard, cardParams())
+
+
+
         root.addView(section("FOLLOWING"), sectionParams())
 
         val followingCard = card()
@@ -554,6 +608,30 @@ class MainActivity : Activity() {
         })
 
         setContentView(scroll)
+    }
+
+    private fun showExcludedTagsDialog() {
+        val input = EditText(this).apply {
+            setText(SessionStore.excludedTagsText(this@MainActivity))
+            hint = "One Pixiv tag per line"
+            minLines = 5
+            maxLines = 12
+            gravity = Gravity.TOP
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Excluded artwork tags")
+            .setMessage("Exact, case-insensitive matches. Applies to Live Sync, Backfill and direct download; never removes existing files.")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                SessionStore.setExcludedTagsText(this, input.text.toString())
+                val count = SessionStore.excludedTags(this).size
+                Toast.makeText(this, "$count excluded tags saved", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     private fun refresh() {
@@ -1261,12 +1339,17 @@ class MainActivity : Activity() {
     }
 
     private fun startSync(mode: SyncMode, targetArtistId: String? = null) {
-        if (!SessionStore.isLoggedIn(this)) {
+        if (mode != SyncMode.CLOUD && !SessionStore.isLoggedIn(this)) {
             Toast.makeText(this, "Connect your Pixiv account first", Toast.LENGTH_LONG).show()
             return
         }
+        if (mode == SyncMode.CLOUD && (!TeraboxSettings.enabled(this) ||
+            !TeraboxSettings.isConfigured(this))) {
+            Toast.makeText(this, "Configure and enable TeraBox first", Toast.LENGTH_LONG).show()
+            return
+        }
 
-        AppDb(this).use { db ->
+        if (mode != SyncMode.CLOUD) AppDb(this).use { db ->
             val eligible = if (targetArtistId != null) {
                 listOfNotNull(db.artist(targetArtistId))
             } else if (mode == SyncMode.LIVE) {
@@ -1307,6 +1390,8 @@ class MainActivity : Activity() {
             this,
             if (targetArtistId != null) {
                 "Retry started"
+            } else if (mode == SyncMode.CLOUD) {
+                "TeraBox upload started"
             } else if (mode == SyncMode.LIVE) {
                 if (SessionStore.followingFeedEnabled(this)) {
                     "Checking your Following feed and selected watched artists"
@@ -1347,6 +1432,7 @@ class MainActivity : Activity() {
             SyncMode.LIVE -> "Live Sync"
             SyncMode.BACKFILL -> "Archive Backfill"
             SyncMode.DIRECT -> "Direct Download"
+            SyncMode.CLOUD -> "TeraBox Upload"
             null -> ""
         }
 

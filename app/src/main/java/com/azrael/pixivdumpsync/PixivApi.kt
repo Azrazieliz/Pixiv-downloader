@@ -45,7 +45,8 @@ class PixivApi(private val context: Context) {
         val illustType: Int,
         val isBookmarked: Boolean,
         val thumbnailUrl: String?,
-        val originalUrl: String?
+        val originalUrl: String?,
+        val tags: List<String>
     )
 
     private var csrfToken: String? = null
@@ -215,7 +216,18 @@ class PixivApi(private val context: Context) {
             originalUrl = firstNonBlank(
                 urls?.optString("original", "") ?: "",
                 body.optString("original", "")
-            )
+            ),
+            tags = buildList {
+                val entries = body.optJSONObject("tags")?.optJSONArray("tags") ?: JSONArray()
+                for (index in 0 until entries.length()) {
+                    val entry = entries.optJSONObject(index) ?: continue
+                    val raw = entry.optString("tag", "").trim()
+                    if (raw.isNotEmpty()) add(raw)
+                    val translation = entry.optJSONObject("translation")
+                    val translated = translation?.optString("en", "")?.trim().orEmpty()
+                    if (translated.isNotEmpty()) add(translated)
+                }
+            }
         )
     }
 
