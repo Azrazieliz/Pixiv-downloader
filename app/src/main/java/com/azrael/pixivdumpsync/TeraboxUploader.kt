@@ -229,7 +229,6 @@ class TeraboxUploader(private val context: Context) {
                     output.write(bytes)
                     output.write(suffix)
                 }
-            }
             parseResponse(connection)
         } finally {
             NetworkRequestRegistry.unregister(connection)
