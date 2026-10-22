@@ -14,6 +14,19 @@ object SessionStore {
     private const val BACKGROUND_ARTIST_OFFSET_KEY = "background_artist_offset"
     private const val LAST_AUTO_SYNC_AT_KEY = "last_auto_sync_at"
     private const val LAST_AUTO_SYNC_RESULT_KEY = "last_auto_sync_result"
+    private const val EXCLUDED_TAGS_KEY = "excluded_artwork_tags"
+
+    fun excludedTagsText(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(EXCLUDED_TAGS_KEY, "").orEmpty()
+
+    fun excludedTags(context: Context): Set<String> =
+        TagExclusionPolicy.parse(excludedTagsText(context))
+
+    fun setExcludedTagsText(context: Context, value: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(EXCLUDED_TAGS_KEY, value.trim()).apply()
+    }
 
     fun normalizeCookieInput(raw: String): String {
         var value = raw.trim()
