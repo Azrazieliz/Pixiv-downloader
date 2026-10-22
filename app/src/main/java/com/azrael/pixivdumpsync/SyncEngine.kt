@@ -17,6 +17,7 @@ class SyncEngine(private val context: Context) {
         var pagesDownloaded: Int = 0,
         var skippedDone: Int = 0,
         var skippedUgoira: Int = 0,
+        var skippedTags: Int = 0,
         var errors: Int = 0
     )
 
@@ -694,6 +695,7 @@ class SyncEngine(private val context: Context) {
                         stats.pagesDownloaded += localStats.pagesDownloaded
                         stats.skippedDone += localStats.skippedDone
                         stats.skippedUgoira += localStats.skippedUgoira
+                        stats.skippedTags += localStats.skippedTags
                         stats.errors += localStats.errors
                     }
                 }
@@ -728,6 +730,16 @@ class SyncEngine(private val context: Context) {
         val detail = api.artworkDetail(id)
 
         if (detail.userId != expectedArtistId) {
+            return WorkResult.SKIPPED
+        }
+
+        val blockedTag = TagExclusionPolicy.firstBlockedTag(
+            detail.tags,
+            SessionStore.excludedTags(context)
+        )
+        if (blockedTag != null) {
+            db.upsertWork(id, expectedArtistId, detail.title, "SKIPPED_TAG", 0)
+            stats.skippedTags++
             return WorkResult.SKIPPED
         }
 
@@ -856,6 +868,7 @@ class SyncEngine(private val context: Context) {
             "$stamp — ${modeLabel(mode)}: " +
                 "${stats.worksCompleted} completed, " +
                 "${stats.pagesDownloaded} images, " +
+                "${stats.skippedTags} tag-filtered, " +
                 "${stats.errors} errors"
 
         SessionStore.setLastSyncSummary(
