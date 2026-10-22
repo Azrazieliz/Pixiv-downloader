@@ -216,16 +216,19 @@ class TeraboxUploader(private val context: Context) {
             connection.requestMethod = "POST"
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            connection.setChunkedStreamingMode(1024 * 1024)
-            connection.outputStream.use { output ->
-                val header = if (textPart) {
+            val header = if (textPart) {
                     "--$boundary\r\nContent-Disposition: form-data; name=\"$field\"\r\n\r\n"
                 } else {
                     "--$boundary\r\nContent-Disposition: form-data; name=\"$field\"; filename=\"$filename\"\r\nContent-Type: application/octet-stream\r\n\r\n"
                 }
-                output.write(header.toByteArray(Charsets.UTF_8))
-                output.write(bytes)
-                output.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
+                val prefix = header.toByteArray(Charsets.UTF_8)
+                val suffix = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+                connection.setFixedLengthStreamingMode(prefix.size + bytes.size + suffix.size)
+                connection.outputStream.use { output ->
+                    output.write(prefix)
+                    output.write(bytes)
+                    output.write(suffix)
+                }
             }
             parseResponse(connection)
         } finally {
