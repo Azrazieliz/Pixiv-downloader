@@ -423,6 +423,27 @@ class MainActivity : Activity() {
 
         root.addView(syncCard, cardParams())
 
+        root.addView(section("DOWNLOAD FILTERS"), sectionParams())
+        val filterCard = card()
+        filterCard.addView(TextView(this).apply {
+            text = "Blocked Pixiv tags"
+            UiKit.title(this, 16f)
+        })
+        filterCard.addView(TextView(this).apply {
+            text = "Artworks containing any blocked tag are skipped before downloading or bookmarking. Enter one exact tag per line; original and English-translated Pixiv tags are checked. Existing files are not deleted."
+            UiKit.body(this, 12f)
+            setPadding(0, dp(8), 0, 0)
+        })
+        filterCard.addView(Button(this).apply {
+            text = "Edit excluded tags"
+            UiKit.styleSecondaryButton(this@MainActivity, this)
+            setOnClickListener { showExcludedTagsDialog() }
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+        ).apply { topMargin = dp(12) })
+        root.addView(filterCard, cardParams())
+
+
         root.addView(section("FOLLOWING"), sectionParams())
 
         val followingCard = card()
@@ -554,6 +575,30 @@ class MainActivity : Activity() {
         })
 
         setContentView(scroll)
+    }
+
+    private fun showExcludedTagsDialog() {
+        val input = EditText(this).apply {
+            setText(SessionStore.excludedTagsText(this@MainActivity))
+            hint = "One Pixiv tag per line"
+            minLines = 5
+            maxLines = 12
+            gravity = Gravity.TOP
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Excluded artwork tags")
+            .setMessage("Exact, case-insensitive matches. Applies to Live Sync, Backfill and direct download; never removes existing files.")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                SessionStore.setExcludedTagsText(this, input.text.toString())
+                val count = SessionStore.excludedTags(this).size
+                Toast.makeText(this, "$count excluded tags saved", Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     private fun refresh() {
