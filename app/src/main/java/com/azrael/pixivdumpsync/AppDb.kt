@@ -308,7 +308,7 @@ class AppDb(context: Context) : SQLiteOpenHelper(context, "pixivdump.db", null, 
             while (c.moveToNext()) {
                 when (c.getString(0)) {
                     "DONE" -> done += c.getInt(1)
-                    "SKIPPED_UGOIRA" -> skipped += c.getInt(1)
+                    "SKIPPED_UGOIRA", "SKIPPED_TAG" -> skipped += c.getInt(1)
                     else -> partial += c.getInt(1)
                 }
             }
