@@ -61,7 +61,7 @@ object FileStore {
 
     fun listArtworkFiles(context: Context): List<String> {
         val files = linkedSetOf<String>()
-        val pattern = Regex("[0-9]+_p[0-9]+\\\\.(jpg|jpeg|png|gif|webp)")
+        val pattern = Regex("[0-9]+_p[0-9]+\\.(jpg|jpeg|png|gif|webp)")
         for (directory in listOf(RELATIVE_DIR, LEGACY_RELATIVE_DIR)) {
             context.contentResolver.query(
                 COLLECTION_URI,
