@@ -44,13 +44,9 @@ jobs:
             adb shell am start -W -n com.azrael.pixivdumpsync/.MainActivity || true
             sleep 3
             echo "=== PID ==="
-            PID="$(adb shell pidof -s com.azrael.pixivdumpsync | tr -d '\r')"
-            echo "${PID:-<none>}"
+            adb shell pidof -s com.azrael.pixivdumpsync
             echo "=== CRASH BUFFER ==="
             adb logcat -b crash -d || true
             echo "=== APP LOGS ==="
             adb logcat -d | grep -E "pixivdumpsync|AndroidRuntime|FATAL EXCEPTION" || true
-            if [ -z "$PID" ]; then
-              echo "App process is not alive after launch."
-              exit 1
-            fi
+            adb shell pidof -s com.azrael.pixivdumpsync | grep -Eq '[0-9]+' || { echo "App process is not alive after launch"; exit 1; }
