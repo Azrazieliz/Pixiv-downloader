@@ -48,7 +48,8 @@ object TeraboxSettings {
         return s.startsWith("/") && s.length > 2 && !s.contains("..") &&
             !s.contains('?') && !s.contains('#') && !s.contains('\\') &&
             !s.contains('\r') && !s.contains('\n') &&
-            s != "/" && s.startsWith("/From:", ignoreCase = true)
+            s != "/" && java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKC)
+                .startsWith("/From:", ignoreCase = true)
     }
 
     fun isConfigured(context: Context): Boolean =
