@@ -3,7 +3,12 @@ package com.azrael.galleryflow
 object AdapterRegistry {
     private val http = HttpClient()
     private val generic = GenericSiteAdapter(http)
+    private val rule34 = AdultBooruAdapter(SourceId.RULE34)
+    private val gelbooru = AdultBooruAdapter(SourceId.GELBOORU)
+    private val danbooru = AdultBooruAdapter(SourceId.DANBOORU)
+    private val e621 = AdultBooruAdapter(SourceId.E621)
     val adapters: List<SourceAdapter> = listOf(
+        rule34, gelbooru, danbooru, e621,
         KiutakuAdapter(http),
         AuditedPlaceholderAdapter(
             SourceId.FOUR_K_HD,

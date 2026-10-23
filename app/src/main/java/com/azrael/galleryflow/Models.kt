@@ -5,7 +5,11 @@ enum class SourceId(val wireName: String) {
     FOUR_K_HD("4khd"),
     BUONDUA("buondua"),
     COSPLAYTELE("cosplaytele"),
-    GENERIC("generic");
+    GENERIC("generic"),
+    RULE34("rule34"),
+    GELBOORU("gelbooru"),
+    DANBOORU("danbooru"),
+    E621("e621");
 
     companion object {
         fun fromWire(value: String): SourceId = entries.first { it.wireName == value }
@@ -62,7 +66,8 @@ data class MediaRef(
     val url: String,
     val normalizedUrl: String,
     val referer: String,
-    val mimeHint: String? = null
+    val mimeHint: String? = null,
+    val tags: List<String> = emptyList()
 )
 
 data class EntityRecord(

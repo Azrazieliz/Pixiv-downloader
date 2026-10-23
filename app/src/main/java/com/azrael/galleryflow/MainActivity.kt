@@ -136,6 +136,30 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(8) })
 
         root.addView(Button(this).apply {
+            text = "Adult image sites (source presets)"
+            setOnClickListener {
+                val sources = listOf(
+                    "Rule34.xxx - tagged image API" to "https://rule34.xxx/",
+                    "Gelbooru - tagged image API" to "https://gelbooru.com/",
+                    "Danbooru - tagged image API" to "https://danbooru.donmai.us/posts",
+                    "e621 - tagged image API" to "https://e621.net/posts",
+                    "ImageFap - public gallery HTML (experimental)" to "https://www.imagefap.com/",
+                    "Erome - public albums (experimental)" to "https://erome.com/",
+                    "PornPics - public galleries (experimental)" to "https://www.pornpics.com/"
+                )
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Add adult image source")
+                    .setItems(sources.map { it.first }.toTypedArray()) { _, position ->
+                        addressInput.setText(sources[position].second)
+                        addressInput.setSelection(addressInput.text.length)
+                        Toast.makeText(this@MainActivity,
+                            "Optional: append search tags in the URL before adding.", Toast.LENGTH_LONG).show()
+                    }
+                    .show()
+            }
+        }, LinearLayout.LayoutParams(-1, dp(45)).apply { topMargin = dp(8) })
+
+        root.addView(Button(this).apply {
             text = "Import sites from old Kyora JSON"
             setOnClickListener {
                 val pick = Intent(Intent.ACTION_OPEN_DOCUMENT)
@@ -180,8 +204,18 @@ class MainActivity : Activity() {
             12f, MUTED
         ))
         root.addView(Button(this).apply {
-            text = "Edit excluded tags"
+            text = "Edit global excluded tags"
             setOnClickListener { showExcludedTagsDialog() }
+        }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) })
+        root.addView(Button(this).apply {
+            text = "Edit exclusions for selected website"
+            setOnClickListener {
+                val selected = siteFilter
+                if (selected == null) {
+                    Toast.makeText(this@MainActivity,
+                        "Open a specific website first.", Toast.LENGTH_SHORT).show()
+                } else showSiteExcludedTagsDialog(selected)
+            }
         }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) })
 
         root.addView(label("TERABOX / ROUND SYNC", 12f, MUTED).apply {
@@ -237,6 +271,24 @@ class MainActivity : Activity() {
         entityList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(entityList)
         return scroll
+    }
+
+    private fun showSiteExcludedTagsDialog(entityId: String) {
+        val editor = EditText(this).apply {
+            setText(Prefs.siteExcludedTags(this@MainActivity, entityId))
+            hint = "One exact post/gallery tag per line"
+            minLines = 6
+            gravity = Gravity.TOP
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Exclude tags for this site only")
+            .setMessage("Booru image tags are checked per image before downloading. Global exclusions also apply. Existing files are not deleted.")
+            .setView(editor)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                Prefs.setSiteExcludedTags(this, entityId, editor.text.toString())
+                Toast.makeText(this, "Site-specific tags saved", Toast.LENGTH_SHORT).show()
+            }.show()
     }
 
     private fun showExcludedTagsDialog() {
