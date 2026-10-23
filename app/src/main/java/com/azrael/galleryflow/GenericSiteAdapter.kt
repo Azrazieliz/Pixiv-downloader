@@ -240,7 +240,11 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
                 anchor.attr("aria-label").contains("next", true) ||
                 label in setOf("next", "next page", "older", "›", "»", "→")
             val number = pageNumber(uri)
-            if (!next && number <= currentIndex) return@mapNotNull null
+            val explicitPaging = uri.query.orEmpty().contains(Regex("(?:^|&)(?:page|paged|p|offset)=\\d+", RegexOption.IGNORE_CASE)) ||
+                uri.path.contains(Regex("/(?:page|p)/\\d+", RegexOption.IGNORE_CASE))
+            val numericLink = label.toIntOrNull() != null ||
+                anchor.classNames().any { it.contains("pagination", true) || it.contains("page-num", true) }
+            if (!next && (number <= currentIndex || (!explicitPaging && !numericLink))) return@mapNotNull null
             Triple(if (next) 0 else 1, number, href)
         }
         return links.minWithOrNull(compareBy<Triple<Int,Int,String>> { it.first }
