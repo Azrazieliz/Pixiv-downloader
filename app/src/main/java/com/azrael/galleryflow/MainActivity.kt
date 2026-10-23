@@ -24,6 +24,8 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import android.view.View
+import com.azrael.pixivdumpsync.NocturneDesign
 
 class MainActivity : Activity() {
     private var siteFilter: String? = null
@@ -36,15 +38,15 @@ class MainActivity : Activity() {
     private val poll = object : Runnable {
         override fun run() {
             val snapshot = SyncControl.snapshot()
-            status.text = if (snapshot.running) snapshot.message else "Idle • " + entityCount() + " entities"
+            if (page == Page.TRANSFERS) status.text = if (snapshot.running) snapshot.message else "No active transfer"
             handler.postDelayed(this, 500L)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = BG
-        window.navigationBarColor = BG
+        window.statusBarColor = NocturneDesign.background
+        window.navigationBarColor = NocturneDesign.background
         siteFilter = intent.getStringExtra(EXTRA_SITE_ID)
         setContentView(buildUi())
         if (intent.getBooleanExtra(EXTRA_ADD_SITE, false)) {
@@ -71,206 +73,459 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
-    private fun buildUi(): ScrollView {
-        val scroll = ScrollView(this).apply { setBackgroundColor(BG) }
-        val root = LinearLayout(this).apply {
+    private enum class Page { LIBRARY, DISCOVER, TRANSFERS, SETTINGS }
+    private var page = Page.LIBRARY
+    private lateinit var panel: LinearLayout
+    private lateinit var bottom: LinearLayout
+    private lateinit var scroller: ScrollView
+    private val ui get() = NocturneDesign
+
+    private fun buildUi(): LinearLayout {
+        if (intent.getBooleanExtra(EXTRA_ADD_SITE, false)) page = Page.DISCOVER
+        val shell = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(18), dp(16), dp(40))
+            setBackgroundColor(ui.background)
         }
-        scroll.addView(root)
+        val head = ui.row(this@MainActivity).apply {
+            setPadding(dp(15), dp(14), dp(18), dp(14))
+        }
+        head.addView(ui.text(this@MainActivity, "‹", 34f, ui.secondary).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Back to Nocturne"
+            setOnClickListener { finish() }
+        }, LinearLayout.LayoutParams(dp(35), dp(45)))
+        head.addView(ui.brandMark(this@MainActivity, 43), LinearLayout.LayoutParams(dp(43), dp(43)))
+        val words = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+        }
+        words.addView(ui.text(this@MainActivity, "NOCTURNE", 17f, ui.white, true).apply {
+            letterSpacing = .16f
+        })
+        words.addView(ui.text(this@MainActivity, "IMAGE WORKSPACE", 10f, ui.secondary, true).apply {
+            letterSpacing = .12f
+        })
+        head.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(ui.chip(this@MainActivity, "Hub") { finish() })
+        shell.addView(head)
+        shell.addView(View(this).apply { setBackgroundColor(ui.border) },
+            LinearLayout.LayoutParams(-1, dp(1)))
+        scroller = ScrollView(this).apply { clipToPadding = false; isFillViewport = false }
+        panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(20), dp(18), dp(35))
+        }
+        scroller.addView(panel)
+        shell.addView(scroller, LinearLayout.LayoutParams(-1, 0, 1f))
+        bottom = ui.row(this@MainActivity).apply {
+            setPadding(dp(11), dp(10), dp(11), dp(10))
+            setBackgroundColor(ui.surface)
+        }
+        shell.addView(bottom)
+        status = ui.text(this@MainActivity, "Idle", 13f, ui.primary)
+        renderCurrent()
+        return shell
+    }
 
-        root.addView(label(getString(com.azrael.pixivdumpsync.R.string.gallery_page_brand), 26f, Color.WHITE))
-        root.addView(label("Individual sources • flat image archive • tag filters", 13f, MUTED))
-        root.addView(label(
-            if (siteFilter != null) "Sync scope: selected website" else "Sync scope: all enabled websites",
-            12f, ACCENT
-        ))
-        root.addView(Button(this).apply {
-            text = "← All sites"
-            setOnClickListener { siteFilter = null; renderEntities() }
-        }, LinearLayout.LayoutParams(-1, dp(40)))
-        status = label("Idle", 14f, ACCENT).apply { setPadding(0, dp(12), 0, dp(12)) }
-        root.addView(status)
+    private fun go(next: Page) {
+        page = next
+        renderCurrent()
+        scroller.post { scroller.scrollTo(0, 0) }
+    }
 
-        val input = EditText(this).apply {
-            hint = "Add image site or gallery URL (https://…)"
-            setHintTextColor(MUTED)
-            setTextColor(Color.WHITE)
+    private fun renderCurrent() {
+        if (!::panel.isInitialized) return
+        panel.removeAllViews()
+        when (page) {
+            Page.LIBRARY -> renderLibrary()
+            Page.DISCOVER -> renderDiscover()
+            Page.TRANSFERS -> renderTransfers()
+            Page.SETTINGS -> renderSettings()
+        }
+        bottom.removeAllViews()
+        listOf(Page.LIBRARY to "Library", Page.DISCOVER to "Add source",
+            Page.TRANSFERS to "Transfers", Page.SETTINGS to "Settings")
+            .forEach { (target, title) ->
+                val active = target == page
+                val tab = ui.text(this@MainActivity, title, 12f,
+                    if (active) ui.primary else ui.secondary, active).apply {
+                    gravity = Gravity.CENTER
+                    minHeight = dp(46)
+                    background = if (active) ui.shape(this@MainActivity,
+                        ui.soft, 13, ui.soft) else null
+                    setOnClickListener { if (page != target) go(target) }
+                    isClickable = true
+                    isFocusable = true
+                }
+                bottom.addView(tab, LinearLayout.LayoutParams(0, dp(46), 1f).apply {
+                    leftMargin = dp(2); rightMargin = dp(2)
+                })
+            }
+    }
+
+    private fun heading(title: String, description: String) {
+        panel.addView(ui.eyebrow(this@MainActivity, "NOCTURNE COLLECTION"))
+        panel.addView(ui.text(this@MainActivity, title, 30f, ui.white, true), ui.lp(this@MainActivity, 5))
+        panel.addView(ui.text(this@MainActivity, description, 13f, ui.secondary),
+            ui.lp(this@MainActivity, 3, 22))
+    }
+
+    private fun section(title: String, extra: String = "") {
+        val row = ui.row(this@MainActivity)
+        row.addView(ui.text(this@MainActivity, title, 18f, ui.white, true),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        if (extra.isNotBlank()) row.addView(ui.text(this@MainActivity, extra, 12f, ui.subdued))
+        panel.addView(row, ui.lp(this@MainActivity, 25, 12))
+    }
+
+    private fun message(title: String, detail: String): LinearLayout =
+        ui.card(this@MainActivity).apply {
+            addView(ui.text(this@MainActivity, title, 18f, ui.white, true))
+            addView(ui.text(this@MainActivity, detail, 13f, ui.secondary),
+                ui.lp(this@MainActivity, 7))
+        }
+
+    private fun buttonPair(a: String, b: String, fa: () -> Unit, fb: () -> Unit) =
+        ui.weighted(this@MainActivity, ui.action(this@MainActivity, a, true, fa), ui.action(this@MainActivity, b, false, fb))
+
+    private fun switched(title: String, initial: Boolean,
+                         onChange: (Boolean) -> Unit): LinearLayout =
+        ui.row(this@MainActivity).apply {
+            addView(ui.text(this@MainActivity, title, 14f, ui.white),
+                LinearLayout.LayoutParams(0, -2, 1f))
+            addView(Switch(this@MainActivity).apply {
+                isChecked = initial
+                thumbTintList = android.content.res.ColorStateList.valueOf(ui.primary)
+                setOnCheckedChangeListener { _, value -> onChange(value) }
+            })
+        }
+
+    private fun renderLibrary() {
+        val entities = GalleryDb(this).use { it.listEntities() }
+        val current = entities.firstOrNull { it.entityId == siteFilter }
+        if (current != null) {
+            renderDetail(current)
+            return
+        }
+        siteFilter = null
+        heading("Your library", "Every source and downloaded gallery in one place.")
+        val hero = ui.card(this@MainActivity, 21).apply {
+            background = ui.shape(this@MainActivity, ui.soft, 23)
+            addView(ui.eyebrow(this@MainActivity, "CONNECTED SOURCES"))
+            addView(ui.text(this@MainActivity, entities.size.toString(), 42f,
+                ui.primary, true), ui.lp(this@MainActivity, 4))
+            addView(ui.text(this@MainActivity,
+                if (entities.isEmpty()) "Add your first image website."
+                else "Your source catalog is ready.",
+                13f, ui.secondary), ui.lp(this@MainActivity, 3, 17))
+            addView(buttonPair("Add a website", "Transfers",
+                { go(Page.DISCOVER) }, { go(Page.TRANSFERS) }))
+        }
+        panel.addView(hero)
+        section("Saved websites", entities.size.toString() + " SOURCES")
+        if (entities.isEmpty()) {
+            panel.addView(message("Your library is empty",
+                "Browse supported image sources or paste an individual gallery URL to begin."))
+            panel.addView(ui.action(this@MainActivity, "Explore image websites") {
+                go(Page.DISCOVER)
+            }, ui.lp(this@MainActivity, 13))
+            return
+        }
+        entities.forEach { entity ->
+            val domain = runCatching {
+                java.net.URI(entity.canonicalUrl).host.orEmpty().removePrefix("www.")
+            }.getOrDefault(entity.source.wireName)
+            val tile = ui.row(this@MainActivity).apply {
+                setPadding(dp(15), dp(16), dp(15), dp(16))
+                background = ui.touch(this@MainActivity, ui.surface, 19)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { siteFilter = entity.entityId; renderCurrent() }
+            }
+            tile.addView(ui.text(this@MainActivity, domain.take(1).uppercase(), 20f, ui.primary, true).apply {
+                gravity = Gravity.CENTER
+                background = ui.shape(this@MainActivity, ui.soft, 14, ui.soft)
+            }, LinearLayout.LayoutParams(dp(49), dp(49)))
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, dp(6), 0)
+            }
+            content.addView(ui.text(this@MainActivity, entity.displayName, 16f, ui.white, true).apply {
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            content.addView(ui.text(this@MainActivity,
+                if (!entity.lastError.isNullOrBlank()) "Check connection"
+                else if (entity.liveEnabled) domain + "  ·  Live enabled"
+                else domain + "  ·  Manual sync",
+                12f, if (!entity.lastError.isNullOrBlank()) ui.danger else ui.secondary))
+            tile.addView(content, LinearLayout.LayoutParams(0, -2, 1f))
+            tile.addView(ui.text(this@MainActivity, "›", 27f, ui.primary))
+            panel.addView(tile, ui.lp(this@MainActivity, 0, 10))
+        }
+    }
+
+    private fun renderDetail(entity: EntityRecord) {
+        panel.addView(ui.chip(this@MainActivity, "‹ All websites") {
+            siteFilter = null
+            renderCurrent()
+        }, ui.lp(this@MainActivity, 0, 16))
+        val domain = runCatching { java.net.URI(entity.canonicalUrl).host.orEmpty() }
+            .getOrDefault(entity.source.wireName)
+        heading(entity.displayName, domain)
+        val card = ui.card(this@MainActivity, 21)
+        card.addView(ui.eyebrow(this@MainActivity, "SOURCE CONTROLS"))
+        card.addView(ui.text(this@MainActivity, "Sync this website", 22f, ui.white, true), ui.lp(this@MainActivity, 7))
+        card.addView(ui.text(this@MainActivity,
+            "Get recent posts or download older galleries.", 13f, ui.secondary),
+            ui.lp(this@MainActivity, 5, 16))
+        card.addView(buttonPair("Sync now", "Backfill",
+            { startSync(SyncMode.LIVE) }, { startSync(SyncMode.BACKFILL) }))
+        card.addView(ui.action(this@MainActivity, "Block tags for this website") {
+            showSiteExcludedTagsDialog(entity.entityId)
+        }, ui.lp(this@MainActivity, 10))
+        card.addView(switched("Include in bulk sync", entity.selected) {
+            GalleryDb(this).use { db -> db.setSelected(entity.source, entity.entityId, it) }
+        }, ui.lp(this@MainActivity, 14))
+        card.addView(switched("Check automatically", entity.liveEnabled) {
+            GalleryDb(this).use { db -> db.setLiveEnabled(entity.source, entity.entityId, it) }
+        }, ui.lp(this@MainActivity, 6))
+        if (!entity.lastError.isNullOrBlank())
+            card.addView(ui.text(this@MainActivity, "Last issue: " + entity.lastError, 12f, ui.danger),
+                ui.lp(this@MainActivity, 11))
+        panel.addView(card)
+        val galleries = GalleryDb(this).use { it.galleryCards(entity.entityId) }
+        section("Downloaded galleries", galleries.size.toString() + " RECENT")
+        if (galleries.isEmpty()) {
+            panel.addView(message("No galleries downloaded",
+                "Run Backfill above to discover available images. Results will appear here."))
+            return
+        }
+        galleries.forEach { gallery ->
+            val tile = ui.row(this@MainActivity).apply {
+                setPadding(dp(10), dp(10), dp(12), dp(10))
+                background = ui.touch(this@MainActivity, ui.surface, 18)
+                isClickable = true
+                isFocusable = true
+            }
+            val thumb = ImageView(this).apply {
+                setImageResource(android.R.drawable.ic_menu_gallery)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = ui.shape(this@MainActivity, ui.raised, 12)
+            }
+            tile.addView(thumb, LinearLayout.LayoutParams(dp(84), dp(84)))
+            val words = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, 0, 0)
+            }
+            words.addView(ui.text(this@MainActivity, gallery.title, 15f, ui.white, true).apply {
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            words.addView(ui.text(this@MainActivity, gallery.count.toString() + " images · " +
+                gallery.state, 12f, ui.secondary), ui.lp(this@MainActivity, 7))
+            tile.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+            tile.setOnClickListener {
+                startActivity(Intent(this, GalleryDetailActivity::class.java)
+                    .putExtra(GalleryDetailActivity.EXTRA_GALLERY_ID, gallery.galleryId)
+                    .putExtra(GalleryDetailActivity.EXTRA_SOURCE, gallery.source.wireName)
+                    .putExtra(GalleryDetailActivity.EXTRA_TITLE, gallery.title))
+            }
+            panel.addView(tile, ui.lp(this@MainActivity, 0, 9))
+            gallery.firstUri?.let { url ->
+                thumbnailPool.execute {
+                    val bmp = runCatching {
+                        contentResolver.loadThumbnail(Uri.parse(url), Size(220, 220), null)
+                    }.getOrNull()
+                    if (bmp != null) runOnUiThread {
+                        if (!isFinishing && thumb.parent != null) thumb.setImageBitmap(bmp)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun renderDiscover() {
+        heading("Add a website", "Find a supported source or connect a specific gallery URL.")
+        val entry = ui.card(this@MainActivity, 20)
+        entry.addView(ui.eyebrow(this@MainActivity, "WEBSITE OR ALBUM URL"))
+        addressInput = EditText(this).apply {
+            hint = "https://example.com/gallery/..."
             setSingleLine(true)
-            setBackgroundColor(SURFACE)
-            setPadding(dp(12), 0, dp(12), 0)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_URI
+            textSize = 14f
+            setTextColor(ui.white)
+            setHintTextColor(ui.subdued)
+            background = ui.shape(this@MainActivity, ui.background, 15)
+            setPadding(dp(14), 0, dp(14), 0)
         }
-        addressInput = input
-        root.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
-
-        root.addView(Button(this).apply {
-            text = "Add image site / gallery"
-            setOnClickListener {
-                val button = this
-                val url = input.text.toString().trim()
-                if (url.isBlank()) return@setOnClickListener
-                button.isEnabled = false
-                status.text = "Resolving source…"
-                Thread {
-                    val result = runCatching {
-                        val adapter = AdapterRegistry.forUrl(url)
-                        if (!adapter.enabled) throw AdapterException(adapter.statusLabel)
-                        adapter.resolveEntity(url).also { entity ->
-                            GalleryDb(this@MainActivity).use { db -> db.addEntity(entity) }
-                        }
-                    }
-                    runOnUiThread {
-                        button.isEnabled = true
-                        result.onSuccess { entity ->
-                            input.text.clear()
-                            status.text = "Added " + entity.displayName
-                            siteFilter = entity.stableId
-                            renderEntities()
-                        }.onFailure { error ->
-                            status.text = error.message ?: error.javaClass.simpleName
-                            Toast.makeText(this@MainActivity, status.text, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }.start()
-            }
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(8) })
-
-        root.addView(Button(this).apply {
-            text = "Adult image sites (source presets)"
-            setOnClickListener {
-                val sources = listOf(
-                    "Rule34.xxx - tagged image API" to "https://rule34.xxx/",
-                    "Gelbooru - tagged image API" to "https://gelbooru.com/",
-                    "Danbooru - tagged image API" to "https://danbooru.donmai.us/posts",
-                    "e621 - tagged image API" to "https://e621.net/posts",
-                    "ImageFap - public gallery HTML (experimental)" to "https://www.imagefap.com/",
-                    "Erome - public albums (experimental)" to "https://erome.com/",
-                    "PornPics - public galleries (experimental)" to "https://www.pornpics.com/"
-                )
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Add adult image source")
-                    .setItems(sources.map { it.first }.toTypedArray()) { _, position ->
-                        addressInput.setText(sources[position].second)
-                        addressInput.setSelection(addressInput.text.length)
-                        Toast.makeText(this@MainActivity,
-                            "Optional: append search tags in the URL before adding.", Toast.LENGTH_LONG).show()
-                    }
-                    .show()
-            }
-        }, LinearLayout.LayoutParams(-1, dp(45)).apply { topMargin = dp(8) })
-
-        root.addView(Button(this).apply {
-            text = "Import sites from old Kyora JSON"
-            setOnClickListener {
-                val pick = Intent(Intent.ACTION_OPEN_DOCUMENT)
-                    .addCategory(Intent.CATEGORY_OPENABLE)
-                    .setType("application/json")
-                startActivityForResult(pick, 708)
-            }
-        }, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(8) })
-
-        val syncRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        syncRow.addView(Button(this).apply {
-            text = "Live Sync"
-            setOnClickListener { startSync(SyncMode.LIVE) }
-        }, LinearLayout.LayoutParams(0, dp(50), 1f))
-        syncRow.addView(Button(this).apply {
-            text = "Backfill"
-            setOnClickListener { startSync(SyncMode.BACKFILL) }
-        }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { leftMargin = dp(8) })
-        root.addView(syncRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(14) })
-
-        val transport = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        transport.addView(Button(this).apply {
-            text = "Pause / Resume"
-            setOnClickListener {
-                val action = if (SyncControl.snapshot().paused) SyncForegroundService.ACTION_RESUME else SyncForegroundService.ACTION_PAUSE
-                startService(Intent(this@MainActivity, SyncForegroundService::class.java).setAction(action))
-            }
-        }, LinearLayout.LayoutParams(0, dp(46), 1f))
-        transport.addView(Button(this).apply {
-            text = "Stop"
-            setOnClickListener {
-                startService(Intent(this@MainActivity, SyncForegroundService::class.java).setAction(SyncForegroundService.ACTION_STOP))
-            }
-        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(8) })
-        root.addView(transport, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
-
-        root.addView(label("DOWNLOAD FILTERS", 12f, MUTED).apply {
-            setPadding(0, dp(18), 0, dp(6))
+        entry.addView(addressInput, LinearLayout.LayoutParams(-1, dp(54)).apply {
+            topMargin = dp(14)
         })
-        root.addView(label(
-            "Blocked exact gallery tags (case/Unicode insensitive). A matching gallery is skipped before image downloads; existing files are retained.",
-            12f, MUTED
-        ))
-        root.addView(Button(this).apply {
-            text = "Edit global excluded tags"
-            setOnClickListener { showExcludedTagsDialog() }
-        }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) })
-        root.addView(Button(this).apply {
-            text = "Edit exclusions for selected website"
-            setOnClickListener {
-                val selected = siteFilter
-                if (selected == null) {
-                    Toast.makeText(this@MainActivity,
-                        "Open a specific website first.", Toast.LENGTH_SHORT).show()
-                } else showSiteExcludedTagsDialog(selected)
+        entry.addView(ui.action(this@MainActivity, "Add to my library", true) {
+            addSite()
+        }, ui.lp(this@MainActivity, 12))
+        panel.addView(entry)
+        section("Supported websites", "TAP TO SELECT")
+        val presets = listOf(
+            Triple("Rule34", "Tagged images · API", "https://rule34.xxx/index.php?page=post&s=list&tags="),
+            Triple("Gelbooru", "Tagged images · API", "https://gelbooru.com/index.php?page=post&s=list&tags="),
+            Triple("Danbooru", "Illustration archive · API", "https://danbooru.donmai.us/posts?tags="),
+            Triple("e621", "Tagged image archive · API", "https://e621.net/posts?tags="),
+            Triple("ImageFap", "Public galleries · experimental", "https://www.imagefap.com/"),
+            Triple("Erome", "Public albums · experimental", "https://erome.com/"),
+            Triple("PornPics", "Public galleries · experimental", "https://www.pornpics.com/")
+        )
+        presets.forEach { (name, summary, url) ->
+            val tile = ui.row(this@MainActivity).apply {
+                setPadding(dp(14), dp(13), dp(14), dp(13))
+                background = ui.touch(this@MainActivity, ui.surface, 17)
+                isClickable = true
+                isFocusable = true
             }
-        }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) })
-
-        root.addView(label("TERABOX / ROUND SYNC", 12f, MUTED).apply {
-            setPadding(0, dp(18), 0, dp(6))
-        })
-        root.addView(label(
-            "Configure a Round Sync COPY task from Downloads/" + getString(com.azrael.pixivdumpsync.R.string.gallery_download_folder) + " to your TeraBox remote. Downloads remain on this device until transfer is confirmed in Round Sync.",
-            12f, MUTED
-        ))
-        root.addView(Button(this).apply {
-            text = "Round Sync settings"
-            setOnClickListener { RoundSyncBridge.showSettings(this@MainActivity) }
-        }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) })
-        root.addView(Button(this).apply {
-            text = "Run TeraBox backup now"
-            setOnClickListener {
-                Toast.makeText(this@MainActivity, RoundSyncBridge.trigger(this@MainActivity), Toast.LENGTH_LONG).show()
+            tile.addView(ui.text(this@MainActivity, name.take(1), 21f, ui.primary, true).apply {
+                gravity = Gravity.CENTER
+                background = ui.shape(this@MainActivity, ui.soft, 13, ui.soft)
+            }, LinearLayout.LayoutParams(dp(47), dp(47)))
+            val words = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, 0, 0)
             }
-        }, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(8) })
-
-        val autoRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            words.addView(ui.text(this@MainActivity, name, 16f, ui.white, true))
+            words.addView(ui.text(this@MainActivity, summary, 12f, ui.secondary))
+            tile.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+            tile.addView(ui.text(this@MainActivity, "+", 25f, ui.primary))
+            tile.setOnClickListener {
+                addressInput.setText(url)
+                addressInput.setSelection(addressInput.length())
+                scroller.smoothScrollTo(0, 0)
+                Toast.makeText(this,
+                    if (url.endsWith("tags=")) "Enter a tag after tags=, then tap Add."
+                    else "You can replace this with a specific gallery URL.",
+                    Toast.LENGTH_LONG).show()
+            }
+            panel.addView(tile, ui.lp(this@MainActivity, 0, 9))
         }
-        autoRow.addView(label("Automatic periodic Live checks", 14f, Color.WHITE), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        autoRow.addView(Switch(this).apply {
-            isChecked = Prefs.autoSync(this@MainActivity)
-            setOnCheckedChangeListener { _, checked ->
-                Prefs.setAutoSync(this@MainActivity, checked)
-                if (checked) Scheduler.ensure(this@MainActivity) else Scheduler.cancel(this@MainActivity)
-            }
-        })
-        root.addView(autoRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
+        panel.addView(ui.text(this@MainActivity,
+            "Public HTML galleries may require login, JavaScript or a dedicated adapter.",
+            12f, ui.subdued), ui.lp(this@MainActivity, 15))
+    }
 
-        val exportRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        exportRow.addView(Button(this).apply {
-            text = "Export JSON"
-            setOnClickListener { export(true) }
-        }, LinearLayout.LayoutParams(0, dp(46), 1f))
-        exportRow.addView(Button(this).apply {
-            text = "Export CSV"
-            setOnClickListener { export(false) }
-        }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { leftMargin = dp(8) })
-        root.addView(exportRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
-
-        root.addView(label("SOURCES", 12f, MUTED).apply { setPadding(0, dp(18), 0, dp(6)) })
-        AdapterRegistry.adapters.forEach { adapter ->
-            val text = adapter.source.wireName + ": " + if (adapter.enabled) "enabled" else adapter.statusLabel
-            root.addView(label(text, 12f, if (adapter.enabled) ACCENT else MUTED))
+    private fun addSite() {
+        if (!::addressInput.isInitialized) return
+        val raw = addressInput.text.toString().trim()
+        if (raw.isBlank()) {
+            Toast.makeText(this, "Enter a website or gallery URL.", Toast.LENGTH_SHORT).show()
+            return
         }
+        Toast.makeText(this, "Checking source...", Toast.LENGTH_SHORT).show()
+        Thread {
+            val result = runCatching {
+                val adapter = AdapterRegistry.forUrl(raw)
+                if (!adapter.enabled) throw AdapterException(adapter.statusLabel)
+                adapter.resolveEntity(raw).also {
+                    GalleryDb(this).use { db -> db.addEntity(it) }
+                }
+            }
+            runOnUiThread {
+                result.onSuccess {
+                    siteFilter = it.stableId
+                    go(Page.LIBRARY)
+                }.onFailure {
+                    Toast.makeText(this, it.message ?: "Cannot add website",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
 
-        root.addView(label("ENTITIES", 12f, MUTED).apply { setPadding(0, dp(18), 0, dp(6)) })
-        entityList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(entityList)
-        return scroll
+    private fun renderTransfers() {
+        heading("Transfers", "Download new galleries and monitor scheduled checks.")
+        val hero = ui.card(this@MainActivity, 21)
+        hero.addView(ui.eyebrow(this@MainActivity, "TRANSFER STATUS"))
+        hero.addView(ui.text(this@MainActivity, "Gallery downloader", 22f, ui.white, true), ui.lp(this@MainActivity, 7))
+        status = ui.text(this@MainActivity,
+            if (SyncControl.snapshot().running) SyncControl.snapshot().message else "Idle",
+            13f, ui.primary)
+        hero.addView(status, ui.lp(this@MainActivity, 9, 15))
+        hero.addView(ui.text(this@MainActivity, if (siteFilter == null)
+            "Scope: selected websites" else "Scope: current website",
+            12f, ui.violet), ui.lp(this@MainActivity, 0, 15))
+        hero.addView(buttonPair("Sync now", "Backfill",
+            { startSync(SyncMode.LIVE) }, { startSync(SyncMode.BACKFILL) }))
+        hero.addView(ui.weighted(this@MainActivity,
+            ui.action(this@MainActivity, "Pause / Resume") {
+                val action = if (SyncControl.snapshot().paused)
+                    SyncForegroundService.ACTION_RESUME else SyncForegroundService.ACTION_PAUSE
+                startService(Intent(this, SyncForegroundService::class.java)
+                    .setAction(action))
+            },
+            ui.action(this@MainActivity, "Stop transfer") {
+                startService(Intent(this, SyncForegroundService::class.java)
+                    .setAction(SyncForegroundService.ACTION_STOP))
+            }), ui.lp(this@MainActivity, 10))
+        panel.addView(hero)
+        panel.addView(message("Sync or backfill?",
+            "Sync checks newly available content. Backfill retrieves older albums or posts where the site supports it."),
+            ui.lp(this@MainActivity, 13))
+        section("Automation")
+        val auto = ui.card(this@MainActivity)
+        auto.addView(switched("Automatic gallery checks", Prefs.autoSync(this)) {
+            Prefs.setAutoSync(this, it)
+            if (it) Scheduler.ensure(this) else Scheduler.cancel(this)
+        })
+        auto.addView(ui.text(this@MainActivity,
+            "Android schedules checks in the background. Downloads can be paused or stopped above.",
+            12f, ui.subdued), ui.lp(this@MainActivity, 7))
+        panel.addView(auto)
+    }
+
+    private fun renderSettings() {
+        heading("Preferences", "Download rules, exports and cloud destinations.")
+        section("Content filters")
+        val filters = ui.card(this@MainActivity)
+        filters.addView(ui.text(this@MainActivity, "Exclude unwanted tags", 18f, ui.white, true))
+        filters.addView(ui.text(this@MainActivity,
+            "Skip exact matching tags before downloading. Existing files remain untouched.",
+            13f, ui.secondary), ui.lp(this@MainActivity, 7, 13))
+        filters.addView(ui.action(this@MainActivity, "Edit global blocked tags") {
+            showExcludedTagsDialog()
+        })
+        filters.addView(ui.action(this@MainActivity, "Edit current website tags") {
+            val id = siteFilter
+            if (id == null) Toast.makeText(this,
+                "Open a website from the Library first.", Toast.LENGTH_LONG).show()
+            else showSiteExcludedTagsDialog(id)
+        }, ui.lp(this@MainActivity, 10))
+        panel.addView(filters)
+        section("Cloud backup")
+        val cloud = ui.card(this@MainActivity)
+        cloud.addView(ui.text(this@MainActivity, "Round Sync / TeraBox", 18f, ui.white, true))
+        val folder = getString(com.azrael.pixivdumpsync.R.string.gallery_download_folder)
+        cloud.addView(ui.text(this@MainActivity,
+            "Copy Downloads/" + folder + "/ to your cloud storage. Confirm finished uploads inside Round Sync.",
+            13f, ui.secondary), ui.lp(this@MainActivity, 7, 13))
+        cloud.addView(ui.action(this@MainActivity, "Configure Round Sync") {
+            RoundSyncBridge.showSettings(this)
+        })
+        cloud.addView(ui.action(this@MainActivity, "Start backup task") {
+            Toast.makeText(this, RoundSyncBridge.trigger(this), Toast.LENGTH_LONG).show()
+        }, ui.lp(this@MainActivity, 10))
+        panel.addView(cloud)
+        section("Data portability")
+        val files = ui.card(this@MainActivity)
+        files.addView(ui.text(this@MainActivity, "Catalog and backup", 18f, ui.white, true))
+        files.addView(ui.text(this@MainActivity, "Restore website settings from Kyora or export your catalog.",
+            13f, ui.secondary), ui.lp(this@MainActivity, 7, 13))
+        files.addView(ui.action(this@MainActivity, "Import previous Kyora sources") {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE).setType("application/json"), 708)
+        })
+        files.addView(ui.weighted(this@MainActivity,
+            ui.action(this@MainActivity, "Export JSON") { export(true) },
+            ui.action(this@MainActivity, "Export CSV") { export(false) }), ui.lp(this@MainActivity, 10))
+        panel.addView(files)
     }
 
     private fun showSiteExcludedTagsDialog(entityId: String) {
@@ -332,122 +587,15 @@ class MainActivity : Activity() {
     }
 
     private fun renderEntities() {
-        if (!::entityList.isInitialized) return
-        val allEntities = GalleryDb(this).use { it.listEntities() }
-        val entities = allEntities.filter { siteFilter == null || it.entityId == siteFilter }
-        entityList.removeAllViews()
-        if (entities.isEmpty()) {
-            entityList.addView(label(
-                if (allEntities.isEmpty()) "No sites yet. Paste a public image-site URL above."
-                else "Site not found. Open All sites.", 13f, MUTED
-            ))
-            return
-        }
-        entities.forEach { entity ->
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-                setBackgroundColor(SURFACE)
-            }
-            card.addView(label(entity.displayName + "  •  " + entity.source.wireName, 15f, Color.WHITE))
-            card.addView(label(entity.canonicalUrl, 11f, MUTED))
-            card.addView(Button(this).apply {
-                text = if (siteFilter == entity.entityId) "Viewing site" else "Open site"
-                isEnabled = siteFilter != entity.entityId
-                setOnClickListener { siteFilter = entity.entityId; renderEntities() }
-            })
-            if (!entity.lastError.isNullOrBlank()) card.addView(label(entity.lastError, 11f, ERROR))
-
-            val toggles = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            toggles.addView(CheckBox(this).apply {
-                text = "Selected"
-                setTextColor(Color.WHITE)
-                isChecked = entity.selected
-                setOnCheckedChangeListener { _, checked ->
-                    GalleryDb(this@MainActivity).use { it.setSelected(entity.source, entity.entityId, checked) }
-                }
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            toggles.addView(Switch(this).apply {
-                text = "Live"
-                setTextColor(Color.WHITE)
-                isChecked = entity.liveEnabled
-                setOnCheckedChangeListener { _, checked ->
-                    GalleryDb(this@MainActivity).use { it.setLiveEnabled(entity.source, entity.entityId, checked) }
-                }
-            })
-            card.addView(toggles)
-            entityList.addView(
-                card,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
-            )
-        }
-        if (siteFilter != null) renderGalleryCards(entities.firstOrNull()?.entityId)
-    }
-
-    private fun renderGalleryCards(entityId: String?) {
-        if (entityId == null) return
-        val galleries = GalleryDb(this).use { it.galleryCards(entityId) }
-        val header = label("GALLERIES / ${galleries.size} RECENT", 13f, ACCENT).apply {
-            setPadding(0, dp(16), 0, dp(8))
-        }
-        entityList.addView(header)
-        entityList.addView(Button(this).apply {
-            text = "Refresh gallery list"
-            setOnClickListener { renderEntities() }
-        }, LinearLayout.LayoutParams(-1, dp(42)))
-        if (galleries.isEmpty()) {
-            entityList.addView(label("No galleries cataloged yet. Run Backfill for this site.", 13f, MUTED))
-            return
-        }
-        for (gallery in galleries) {
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-                setBackgroundColor(SURFACE)
-                isClickable = true
-                isFocusable = true
-            }
-            val thumb = ImageView(this).apply {
-                setImageResource(android.R.drawable.ic_menu_gallery)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                setBackgroundColor(BG)
-            }
-            card.addView(thumb, LinearLayout.LayoutParams(dp(92), dp(92)))
-            val details = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(10), 0, 0, 0)
-            }
-            details.addView(label(gallery.title.take(90), 14f, Color.WHITE))
-            details.addView(label("${gallery.count} images / ${gallery.state}", 12f, MUTED))
-            card.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
-            card.setOnClickListener {
-                startActivity(Intent(this, GalleryDetailActivity::class.java)
-                    .putExtra(GalleryDetailActivity.EXTRA_GALLERY_ID, gallery.galleryId)
-                    .putExtra(GalleryDetailActivity.EXTRA_SOURCE, gallery.source.wireName)
-                    .putExtra(GalleryDetailActivity.EXTRA_TITLE, gallery.title))
-            }
-            entityList.addView(card, LinearLayout.LayoutParams(-1, dp(108)).apply {
-                bottomMargin = dp(7)
-            })
-            if (gallery.firstUri != null) {
-                val uri = Uri.parse(gallery.firstUri)
-                thumbnailPool.execute {
-                    val bitmap = runCatching {
-                        contentResolver.loadThumbnail(uri, Size(250, 250), null)
-                    }.getOrNull()
-                    if (bitmap != null) runOnUiThread {
-                        if (!isFinishing && thumb.parent != null) thumb.setImageBitmap(bitmap)
-                    }
-                }
-            }
-        }
+        if (::panel.isInitialized && page == Page.LIBRARY) renderCurrent()
     }
 
     private fun startSync(mode: SyncMode) {
+        if (entityCount() == 0) {
+            Toast.makeText(this, "Add an image source before syncing.", Toast.LENGTH_LONG).show()
+            go(Page.DISCOVER)
+            return
+        }
         startForegroundService(
             Intent(this, SyncForegroundService::class.java)
                 .setAction(SyncForegroundService.ACTION_START)

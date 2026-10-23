@@ -4,124 +4,168 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.widget.Button
+import android.view.Gravity
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.azrael.galleryflow.GalleryDb
 import java.net.URI
 
-/** Launcher for both independently managed download engines. */
+/** Branded Nocturne home: choose a workflow before entering its controls. */
 class DownloaderHubActivity : Activity() {
+    private val design get() = NocturneDesign
     private lateinit var savedSites: LinearLayout
-    private val bg = Color.rgb(12, 15, 23)
-    private val surface = Color.rgb(27, 32, 44)
-    private val muted = Color.rgb(153, 170, 197)
-    private val accent = Color.rgb(118, 181, 255)
-    private val purple = Color.rgb(190, 144, 255)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = bg
-        window.navigationBarColor = bg
-        val scroll = ScrollView(this).apply {
-            setBackgroundColor(bg)
+        window.statusBarColor = design.background
+        window.navigationBarColor = design.background
+
+        val screen = ScrollView(this).apply {
             isFillViewport = true
+            setBackgroundColor(design.background)
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(19), dp(26), dp(19), dp(34))
+            setPadding(dp(20), dp(31), dp(20), dp(39))
         }
-        scroll.addView(root)
-        root.addView(label(getString(R.string.hub_brand_name), 12f, accent, true))
-        root.addView(label(getString(R.string.hub_display_title), 31f, Color.WHITE, true).apply {
-            setPadding(0, dp(8), 0, dp(4))
-        })
-        root.addView(label("One application. Independent site queues, catalogs, and download controls.", 13f, muted))
+        screen.addView(root)
+        val masthead = design.row(this)
+        masthead.addView(design.brandMark(this, 52),
+            LinearLayout.LayoutParams(dp(52), dp(52)))
+        val brand = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+        }
+        brand.addView(design.text(this, "N O C T U R N E", 18f, design.white, true))
+        brand.addView(design.text(this, "A PERSONAL MEDIA ARCHIVE", 10f, design.secondary, true)
+            .apply { letterSpacing = .1f })
+        masthead.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(masthead)
 
-        root.addView(label("DOWNLOAD ENGINES", 12f, muted, true).apply {
-            setPadding(0, dp(26), 0, dp(10))
-        })
-        val pixiv = tile(if (resources.getBoolean(R.bool.nocturne_preview)) "NOCTURNE / PIXIV" else "KUROHA", "Pixiv archive",
-            "Following feed  ·  artists  ·  bookmarks  ·  tag blocking", accent)
-        pixiv.setOnClickListener { startActivity(Intent(this, MainActivity::class.java)) }
-        root.addView(pixiv, params(12))
-        val gallery = tile(if (resources.getBoolean(R.bool.nocturne_preview)) "NOCTURNE / GALLERIES" else "KYORA", "Image sites & galleries",
-            "Saved websites · booru sites · adult galleries · tag blocking", purple)
-        gallery.setOnClickListener { openGalleries() }
-        root.addView(gallery, params(12))
+        val hero = design.card(this, 22).apply {
+            background = design.shape(this@DownloaderHubActivity, design.soft, 24)
+            addView(design.eyebrow(this@DownloaderHubActivity, "COLLECTION CONTROL"))
+            addView(design.text(this@DownloaderHubActivity,
+                "Everything worth\nkeeping, in one place.", 29f, design.white, true),
+                design.lp(this@DownloaderHubActivity, 11))
+            addView(design.text(this@DownloaderHubActivity,
+                "Manage Pixiv art and image galleries with separate queues, filters and archives.",
+                13f, design.secondary), design.lp(this@DownloaderHubActivity, 11, 18))
+            addView(design.action(this@DownloaderHubActivity, "Add a new image source", true) {
+                openGallery(add = true)
+            })
+        }
+        root.addView(hero, design.lp(this, 27))
 
-        root.addView(label("YOUR SITES", 12f, muted, true).apply {
-            setPadding(0, dp(24), 0, dp(8))
+        root.addView(design.eyebrow(this, "YOUR WORKSPACES"), design.lp(this, 27, 12))
+        root.addView(workspace("01", "Pixiv Library",
+            "Following feed, artists, favorites and downloads",
+            design.violet) {
+            startActivity(Intent(this, MainActivity::class.java))
         })
-        root.addView(Button(this).apply {
-            text = "+ Add image website or gallery"
-            textSize = 15f
-            setTextColor(bg)
-            setBackgroundColor(accent)
-            setOnClickListener { openGalleries(add = true) }
-        }, params(12))
+        root.addView(workspace("02", "Image Galleries",
+            "Individual websites, collections and tagged images",
+            design.primary) { openGallery() }, design.lp(this, 11))
+
+        val title = design.row(this)
+        title.addView(design.text(this, "Saved websites", 19f, design.white, true),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        title.addView(design.chip(this, "+ Add") { openGallery(add = true) })
+        root.addView(title, design.lp(this, 32, 13))
         savedSites = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(savedSites)
-        root.addView(label(
-            "Public HTML sites are supported generically. Sources requiring login, JavaScript or special paging need a dedicated adapter.",
-            12f, muted).apply { setPadding(0, dp(18), 0, 0) })
-        setContentView(scroll)
+        root.addView(design.text(this,
+            "New image websites are kept separately. Open a source to configure downloads and blocked tags.",
+            12f, design.subdued), design.lp(this, 14))
+        setContentView(screen)
     }
+
+    private fun workspace(number: String, name: String, summary: String,
+                          tint: Int, onClick: () -> Unit): LinearLayout =
+        design.row(this).apply {
+            setPadding(dp(18), dp(23), dp(18), dp(23))
+            background = design.touch(this@DownloaderHubActivity, design.surface, 22)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            val badge = design.text(this@DownloaderHubActivity, number, 16f,
+                tint, true).apply {
+                gravity = Gravity.CENTER
+                background = design.shape(this@DownloaderHubActivity, design.soft, 15,
+                    design.soft)
+            }
+            addView(badge, LinearLayout.LayoutParams(dp(51), dp(56)))
+            val info = LinearLayout(this@DownloaderHubActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(15), 0, dp(7), 0)
+            }
+            info.addView(design.text(this@DownloaderHubActivity, name, 20f,
+                design.white, true))
+            info.addView(design.text(this@DownloaderHubActivity, summary, 12f,
+                design.secondary), design.lp(this@DownloaderHubActivity, 6))
+            addView(info, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(design.text(this@DownloaderHubActivity, "›", 28f, tint, true))
+        }
 
     override fun onResume() {
         super.onResume()
-        renderSites()
-    }
-
-    private fun renderSites() {
+        if (!::savedSites.isInitialized) return
         savedSites.removeAllViews()
-        val entries = runCatching { GalleryDb(this).use { it.listEntities() } }.getOrDefault(emptyList())
-        if (entries.isEmpty()) {
-            savedSites.addView(label("No custom sites added yet.", 13f, muted).apply {
-                setPadding(dp(8), dp(12), 0, 0)
+        val sites = runCatching { GalleryDb(this).use { it.listEntities() } }
+            .getOrDefault(emptyList())
+        if (sites.isEmpty()) {
+            savedSites.addView(design.card(this).apply {
+                addView(design.text(this@DownloaderHubActivity,
+                    "No additional sources yet", 15f, design.white, true))
+                addView(design.text(this@DownloaderHubActivity,
+                    "Explore supported galleries and add your first URL.",
+                    12f, design.secondary), design.lp(this@DownloaderHubActivity, 8))
+                addView(design.action(this@DownloaderHubActivity, "Explore websites") {
+                    openGallery(add = true)
+                }, design.lp(this@DownloaderHubActivity, 12))
             })
             return
         }
-        entries.forEach { entry ->
-            val domain = runCatching { URI(entry.canonicalUrl).host }.getOrNull().orEmpty()
-            val card = tile(domain.uppercase().take(30),
-                entry.displayName, if (entry.liveEnabled) "Live enabled" else "Manual only",
-                if (entry.liveEnabled) accent else purple)
-            card.setOnClickListener { openGalleries(siteId = entry.entityId) }
-            savedSites.addView(card, params(8))
-        }
-    }
-
-    private fun openGalleries(add: Boolean = false, siteId: String? = null) {
-        val intent = Intent(this, com.azrael.galleryflow.MainActivity::class.java)
-            .putExtra(com.azrael.galleryflow.MainActivity.EXTRA_ADD_SITE, add)
-        if (siteId != null) intent.putExtra(com.azrael.galleryflow.MainActivity.EXTRA_SITE_ID, siteId)
-        startActivity(intent)
-    }
-
-    private fun tile(kicker: String, title: String, subtitle: String, color: Int): LinearLayout =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(17), dp(18), dp(18))
-            background = GradientDrawable().apply {
-                setColor(surface); cornerRadius = dp(16).toFloat()
-                setStroke(dp(1), Color.argb(100, Color.red(color), Color.green(color), Color.blue(color)))
+        sites.take(12).forEach { site ->
+            val domain = runCatching {
+                URI(site.canonicalUrl).host.orEmpty().removePrefix("www.")
+            }.getOrDefault(site.source.wireName)
+            val row = design.row(this).apply {
+                setPadding(dp(14), dp(15), dp(14), dp(15))
+                background = design.touch(this@DownloaderHubActivity, design.surface, 17)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { openGallery(siteId = site.entityId) }
             }
-            isClickable = true
-            isFocusable = true
-            addView(label(kicker, 11f, color, true))
-            addView(label(title, 20f, Color.WHITE, true).apply { setPadding(0, dp(4), 0, 0) })
-            addView(label(subtitle, 12.5f, muted).apply { setPadding(0, dp(6), 0, 0) })
+            val monogram = design.text(this, domain.take(1).uppercase(), 18f,
+                design.primary, true).apply {
+                gravity = Gravity.CENTER
+                background = design.shape(this@DownloaderHubActivity, design.soft, 12)
+            }
+            row.addView(monogram, LinearLayout.LayoutParams(dp(43), dp(43)))
+            val info = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, 0, 0)
+            }
+            info.addView(design.text(this, site.displayName, 15f, design.white, true))
+            info.addView(design.text(this,
+                if (site.liveEnabled) domain + " · Live" else domain,
+                12f, design.secondary), design.lp(this, 3))
+            row.addView(info, LinearLayout.LayoutParams(0, -2, 1f))
+            savedSites.addView(row, design.lp(this, 0, 9))
         }
+    }
 
-    private fun params(gap: Int) = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(gap) }
-    private fun label(value: String, size: Float, color: Int, bold: Boolean = false) =
-        TextView(this).apply {
-            text = value; textSize = size; setTextColor(color)
-            if (bold) setTypeface(null, Typeface.BOLD)
-        }
-    private fun dp(px: Int) = (px * resources.displayMetrics.density).toInt()
+    private fun openGallery(add: Boolean = false, siteId: String? = null) {
+        val target = Intent(this, com.azrael.galleryflow.MainActivity::class.java)
+            .putExtra(com.azrael.galleryflow.MainActivity.EXTRA_ADD_SITE, add)
+        if (siteId != null)
+            target.putExtra(com.azrael.galleryflow.MainActivity.EXTRA_SITE_ID, siteId)
+        startActivity(target)
+    }
+
+    private fun dp(value: Int): Int = design.px(this, value)
 }
