@@ -88,7 +88,7 @@ class DownloaderHubActivity : Activity() {
         entries.forEach { entry ->
             val domain = runCatching { URI(entry.canonicalUrl).host }.getOrNull().orEmpty()
             val card = tile(domain.uppercase().take(30),
-                entry.displayName, if (entry.liveEnabled) "Live enabled  ·  ${{entry.kind}" else "Manual only  ·  ${{entry.kind}",
+                entry.displayName, if (entry.liveEnabled) "Live enabled" else "Manual only",
                 if (entry.liveEnabled) accent else purple)
             card.setOnClickListener { openGalleries(siteId = entry.entityId) }
             savedSites.addView(card, params(8))

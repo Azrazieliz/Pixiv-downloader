@@ -23,10 +23,6 @@ import android.widget.TextView
 import android.widget.Toast
 
 class MainActivity : Activity() {
-    companion object {
-        const val EXTRA_SITE_ID = "extra_site_id"
-        const val EXTRA_ADD_SITE = "extra_add_site"
-    }
     private var siteFilter: String? = null
     private lateinit var addressInput: EditText
     private lateinit var status: TextView
@@ -368,6 +364,8 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        const val EXTRA_SITE_ID = "extra_site_id"
+        const val EXTRA_ADD_SITE = "extra_add_site"
         private val BG = Color.rgb(17, 18, 22)
         private val SURFACE = Color.rgb(31, 33, 40)
         private val MUTED = Color.rgb(166, 171, 184)
