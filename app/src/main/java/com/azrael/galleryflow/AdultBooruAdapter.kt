@@ -11,7 +11,7 @@ import java.security.MessageDigest
 import java.util.Locale
 
 /** Bounded public booru API reader. Exact tags are evaluated per post. */
-class AdultBooruAdapter(override val source: SourceId) : SourceAdapter {
+class AdultBooruAdapter(override val source: SourceId) : PagedBackfillAdapter {
     override val enabled = true
     override val statusLabel = "Tagged-image API"
     private val gate = Any()
@@ -44,19 +44,42 @@ class AdultBooruAdapter(override val source: SourceId) : SourceAdapter {
             apiUrl(search, 0), "booru")
     }
 
-    override fun enumerateGalleries(entity: SourceEntity): Sequence<GalleryRef> = sequence {
+    // Live inspects just the newest window. Backfill has its own saved cursor.
+    override fun enumerateGalleries(entity: SourceEntity): Sequence<GalleryRef> =
+        backfillFrom(entity, 0).take(LIVE_PAGES)
+
+    override fun backfillFrom(entity: SourceEntity, page: Int): Sequence<GalleryRef> = sequence {
         val query = searchTags(URI(entity.canonicalUrl))
-        for (page in 0 until MAX_PAGES) {
+        var current = page.coerceAtLeast(0)
+        val seenSignatures = hashSetOf<String>()
+        while (current < MAX_BACKFILL_PAGES) {
             if (!SyncControl.checkpoint()) return@sequence
-            val found = posts(query, page)
-            if (found.isEmpty()) break
+            val found = posts(query, current)
+            if (found.isEmpty()) return@sequence
             val latest = found.first().optLong("id", -1L)
-            val key = digest(entity.stableId + "/" + page + "/" + latest).take(28)
+            val oldest = found.last().optLong("id", -1L)
+            // A broken pagination API sometimes silently returns page one forever.
+            val signature = "$latest:$oldest"
+            if (!seenSignatures.add(signature)) {
+                throw AdapterException("The image API repeated page data at page " +
+                    (current + 1) + ". Backfill paused; retry or change search tags.")
+            }
+            val key = digest(entity.stableId + "/" + current + "/" + latest).take(28)
             val title = host + " / " + (if (query.isBlank()) "recent" else query) +
-                " / page " + (page + 1)
-            yield(GalleryRef(source, key, entity.stableId, apiUrl(query, page), title))
-            if (found.size < PAGE_SIZE) break
+                " / page " + (current + 1)
+            yield(GalleryRef(source, key, entity.stableId, apiUrl(query, current), title))
+            current++
+            if (found.size < PAGE_SIZE) return@sequence
         }
+        throw AdapterException("Backfill safety limit reached at page " + current +
+            ". Page cursor was saved; resume is available.")
+    }
+
+    override fun pageIndex(ref: GalleryRef): Int {
+        val uri = URI(ref.canonicalUrl)
+        val params = queryParameters(uri)
+        return params["pid"]?.firstOrNull()?.toIntOrNull()
+            ?: params["page"]?.firstOrNull()?.toIntOrNull()?.minus(1) ?: 0
     }
 
     override fun fetchGallery(gallery: GalleryRef): Pair<GalleryMeta,List<MediaRef>> {
@@ -65,7 +88,7 @@ class AdultBooruAdapter(override val source: SourceId) : SourceAdapter {
         val params = queryParameters(uri)
         val page = params["pid"]?.firstOrNull()?.toIntOrNull()
             ?: params["page"]?.firstOrNull()?.toIntOrNull()?.minus(1) ?: 0
-        val posts = posts(query, page.coerceIn(0, MAX_PAGES - 1))
+        val posts = posts(query, page.coerceAtLeast(0))
         val media = posts.mapIndexedNotNull { index, post ->
             val file = if (source == SourceId.E621) {
                 post.optJSONObject("file")?.optString("url")?.takeIf(String::isNotBlank)
@@ -198,7 +221,8 @@ class AdultBooruAdapter(override val source: SourceId) : SourceAdapter {
 
     companion object {
         const val PAGE_SIZE = 75
-        const val MAX_PAGES = 8
+        const val LIVE_PAGES = 2
+        const val MAX_BACKFILL_PAGES = 10000
         private const val MAX_RESPONSE_CHARS = 4_000_000
     }
 }

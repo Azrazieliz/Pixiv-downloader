@@ -38,7 +38,7 @@ class MainActivity : Activity() {
     private val poll = object : Runnable {
         override fun run() {
             val snapshot = SyncControl.snapshot()
-            if (page == Page.TRANSFERS) status.text = if (snapshot.running) snapshot.message else "No active transfer"
+            if (page == Page.TRANSFERS) status.text = snapshot.message
             handler.postDelayed(this, 500L)
         }
     }
@@ -284,6 +284,26 @@ class MainActivity : Activity() {
         card.addView(ui.action(this@MainActivity, "Block tags for this website") {
             showSiteExcludedTagsDialog(entity.entityId)
         }, ui.lp(this@MainActivity, 10))
+        if (AdapterRegistry.forSource(entity.source) is PagedBackfillAdapter) {
+            val next = GalleryDb(this).use {
+                it.backfillPage(entity.source, entity.entityId) + 1
+            }
+            card.addView(ui.text(this@MainActivity,
+                "Historical backfill: next page $next. Backfill resumes here.",
+                12f, ui.secondary), ui.lp(this@MainActivity, 11))
+            card.addView(ui.action(this@MainActivity, "Restart history scan from page 1") {
+                AlertDialog.Builder(this)
+                    .setTitle("Restart historical backfill?")
+                    .setMessage("Previously downloaded files remain saved and won't be downloaded twice. The next Backfill will scan from page one.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Restart") { _, _ ->
+                        GalleryDb(this).use { db ->
+                            db.restartBackfill(entity.source, entity.entityId)
+                        }
+                        renderCurrent()
+                    }.show()
+            }, ui.lp(this@MainActivity, 8))
+        }
         card.addView(switched("Include in bulk sync", entity.selected) {
             GalleryDb(this).use { db -> db.setSelected(entity.source, entity.entityId, it) }
         }, ui.lp(this@MainActivity, 14))
@@ -446,7 +466,7 @@ class MainActivity : Activity() {
         hero.addView(ui.eyebrow(this@MainActivity, "TRANSFER STATUS"))
         hero.addView(ui.text(this@MainActivity, "Gallery downloader", 22f, ui.white, true), ui.lp(this@MainActivity, 7))
         status = ui.text(this@MainActivity,
-            if (SyncControl.snapshot().running) SyncControl.snapshot().message else "Idle",
+            SyncControl.snapshot().message,
             13f, ui.primary)
         hero.addView(status, ui.lp(this@MainActivity, 9, 15))
         hero.addView(ui.text(this@MainActivity, if (siteFilter == null)
