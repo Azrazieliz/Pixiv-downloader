@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 
-class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 2) {
+class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE entities(
             source TEXT NOT NULL,
@@ -71,13 +71,76 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
         )""")
         db.execSQL("CREATE INDEX idx_media_hash ON media(sha256)")
         db.execSQL("CREATE INDEX idx_media_gallery ON media(source, gallery_id)")
+        createRetryTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE entities ADD COLUMN backfill_page INTEGER NOT NULL DEFAULT 0")
         }
+        if (oldVersion < 3) createRetryTable(db)
     }
+
+    private fun createRetryTable(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS backfill_retries (
+                source TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                gallery_id TEXT NOT NULL,
+                canonical_url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                retry_after INTEGER NOT NULL DEFAULT 0,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                PRIMARY KEY(source, gallery_id)
+            )
+        """.trimIndent())
+    }
+
+    fun queueRetry(ref: GalleryRef, error: String) {
+        val row = ContentValues().apply {
+            put("source", ref.source.wireName)
+            put("entity_id", ref.entityStableId)
+            put("gallery_id", ref.stableId)
+            put("canonical_url", ref.canonicalUrl)
+            put("title", ref.title)
+            put("last_error", error.take(400))
+            put("retry_after", System.currentTimeMillis() + 60_000L)
+        }
+        writableDatabase.insertWithOnConflict(
+            "backfill_retries", null, row, SQLiteDatabase.CONFLICT_IGNORE)
+        writableDatabase.update("backfill_retries", row,
+            "source=? AND gallery_id=?",
+            arrayOf(ref.source.wireName, ref.stableId))
+    }
+
+    fun clearRetry(ref: GalleryRef) {
+        writableDatabase.delete("backfill_retries", "source=? AND gallery_id=?",
+            arrayOf(ref.source.wireName, ref.stableId))
+    }
+
+    fun pendingRetries(entity: EntityRecord, limit: Int = 12): List<GalleryRef> {
+        val result = mutableListOf<GalleryRef>()
+        readableDatabase.query(
+            "backfill_retries",
+            arrayOf("gallery_id", "canonical_url", "title"),
+            "source=? AND entity_id=? AND retry_after<=?",
+            arrayOf(entity.source.wireName, entity.entityId,
+                System.currentTimeMillis().toString()),
+            null, null, "retry_after ASC", limit.coerceIn(1, 40).toString()
+        ).use { cursor ->
+            while (cursor.moveToNext()) result.add(
+                GalleryRef(entity.source, cursor.getString(0), entity.entityId,
+                    cursor.getString(1), cursor.getString(2)))
+        }
+        return result
+    }
+
+    fun retryCount(source: SourceId, entityId: String): Int =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM backfill_retries WHERE source=? AND entity_id=?",
+            arrayOf(source.wireName, entityId)
+        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
     fun backfillPage(source: SourceId, entityId: String): Int {
         readableDatabase.rawQuery(

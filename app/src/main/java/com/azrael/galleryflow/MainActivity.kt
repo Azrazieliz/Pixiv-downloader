@@ -314,6 +314,14 @@ class MainActivity : Activity() {
             card.addView(ui.text(this@MainActivity, "Last issue: " + entity.lastError, 12f, ui.danger),
                 ui.lp(this@MainActivity, 11))
         panel.addView(card)
+        val retryCount = GalleryDb(this).use {
+            it.retryCount(entity.source, entity.entityId)
+        }
+        if (retryCount > 0) {
+            panel.addView(message("Incomplete galleries: " + retryCount,
+                "Backfill continues past failed albums. Run Backfill again to retry them."),
+                ui.lp(this@MainActivity, 11))
+        }
         val galleries = GalleryDb(this).use { it.galleryCards(entity.entityId) }
         section("Downloaded galleries", galleries.size.toString() + " RECENT")
         if (galleries.isEmpty()) {

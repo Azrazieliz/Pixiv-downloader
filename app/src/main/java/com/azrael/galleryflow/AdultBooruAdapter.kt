@@ -69,7 +69,9 @@ class AdultBooruAdapter(override val source: SourceId) : PagedBackfillAdapter {
                 " / page " + (current + 1)
             yield(GalleryRef(source, key, entity.stableId, apiUrl(query, current), title))
             current++
-            if (found.size < PAGE_SIZE) return@sequence
+            // A short API response is not proof that this is the final page:
+            // some providers return fewer than requested despite more results.
+            // Continue until an explicitly empty page or duplicate signature.
         }
         throw AdapterException("Backfill safety limit reached at page " + current +
             ". Page cursor was saved; resume is available.")
