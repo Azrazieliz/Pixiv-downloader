@@ -35,8 +35,8 @@ class DownloaderHubActivity : Activity() {
             setPadding(dp(19), dp(26), dp(19), dp(34))
         }
         scroll.addView(root)
-        root.addView(label("ASTERION  /  DOWNLOADER", 12f, accent, true))
-        root.addView(label("Source Library", 31f, Color.WHITE, true).apply {
+        root.addView(label(getString(R.string.hub_brand_name), 12f, accent, true))
+        root.addView(label(getString(R.string.hub_display_title), 31f, Color.WHITE, true).apply {
             setPadding(0, dp(8), 0, dp(4))
         })
         root.addView(label("One application. Independent site queues, catalogs, and download controls.", 13f, muted))
@@ -44,11 +44,11 @@ class DownloaderHubActivity : Activity() {
         root.addView(label("DOWNLOAD ENGINES", 12f, muted, true).apply {
             setPadding(0, dp(26), 0, dp(10))
         })
-        val pixiv = tile("KUROHA", "Pixiv archive",
+        val pixiv = tile(if (resources.getBoolean(R.bool.nocturne_preview)) "NOCTURNE / PIXIV" else "KUROHA", "Pixiv archive",
             "Following feed  ·  artists  ·  bookmarks  ·  tag blocking", accent)
         pixiv.setOnClickListener { startActivity(Intent(this, MainActivity::class.java)) }
         root.addView(pixiv, params(12))
-        val gallery = tile("KYORA", "Image sites & galleries",
+        val gallery = tile(if (resources.getBoolean(R.bool.nocturne_preview)) "NOCTURNE / GALLERIES" else "KYORA", "Image sites & galleries",
             "Saved websites · booru sites · adult galleries · tag blocking", purple)
         gallery.setOnClickListener { openGalleries() }
         root.addView(gallery, params(12))

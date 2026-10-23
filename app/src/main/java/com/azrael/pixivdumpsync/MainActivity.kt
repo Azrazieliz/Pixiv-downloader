@@ -480,7 +480,7 @@ class MainActivity : Activity() {
             UiKit.title(this, 16f)
         })
         roundSyncCard.addView(TextView(this).apply {
-            text = "Alternative to official TeraBox OAuth. Configure Round Sync to COPY Downloads/Kuroha/ to a TeraBox remote. NDUS credentials stay in Round Sync; local files are retained."
+            text = "Alternative to official TeraBox OAuth. Configure Round Sync to COPY Downloads/" + getString(R.string.pixiv_download_folder) + "/ to a TeraBox remote. NDUS credentials stay in Round Sync; local files are retained."
             UiKit.body(this, 12f)
         })
         roundSyncCard.addView(Button(this).apply {
@@ -623,7 +623,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(TextView(this).apply {
-            text = "New files are saved in Downloads/Kuroha. Legacy Downloads/PixiFlow files are still recognized. Works are bookmarked on Pixiv only after every image page exists locally."
+            text = "New files are saved in Downloads/" + getString(R.string.pixiv_download_folder) + ". " + (if (resources.getBoolean(R.bool.nocturne_preview)) "This preview does not reuse Kuroha files. " else "Legacy Downloads/PixiFlow files are still recognized. ") + "Works are bookmarked on Pixiv only after every image page exists locally."
             UiKit.body(this, 11.5f)
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(24), dp(8), 0)

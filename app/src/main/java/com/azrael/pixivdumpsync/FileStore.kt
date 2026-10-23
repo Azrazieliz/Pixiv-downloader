@@ -11,8 +11,13 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object FileStore {
-    private val RELATIVE_DIR =
-        "${Environment.DIRECTORY_DOWNLOADS}/Kuroha/"
+    private fun relativeDir(context: Context): String =
+        Environment.DIRECTORY_DOWNLOADS + "/" + context.getString(R.string.pixiv_download_folder) + "/"
+
+    private fun storageDirectories(context: Context): List<String> =
+        if (context.resources.getBoolean(R.bool.nocturne_preview))
+            listOf(relativeDir(context))
+        else listOf(relativeDir(context), LEGACY_RELATIVE_DIR)
 
     private val LEGACY_RELATIVE_DIR =
         "${Environment.DIRECTORY_DOWNLOADS}/PixiFlow/"
@@ -26,7 +31,7 @@ object FileStore {
             "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND " +
                 "${MediaStore.MediaColumns.RELATIVE_PATH}=?"
 
-        for (relativeDir in listOf(RELATIVE_DIR, LEGACY_RELATIVE_DIR)) {
+        for (relativeDir in storageDirectories(context)) {
             context.contentResolver.query(
                 COLLECTION_URI,
                 projection,
@@ -45,7 +50,7 @@ object FileStore {
         val selection =
             "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND " +
                 "${MediaStore.MediaColumns.RELATIVE_PATH}=?"
-        for (directory in listOf(RELATIVE_DIR, LEGACY_RELATIVE_DIR)) {
+        for (directory in storageDirectories(context)) {
             context.contentResolver.query(
                 COLLECTION_URI, projection, selection, arrayOf(filename, directory), null
             ).use { cursor ->
@@ -62,7 +67,7 @@ object FileStore {
     fun listArtworkFiles(context: Context): List<String> {
         val files = linkedSetOf<String>()
         val pattern = Regex("[0-9]+_p[0-9]+\\.(jpg|jpeg|png|gif|webp)")
-        for (directory in listOf(RELATIVE_DIR, LEGACY_RELATIVE_DIR)) {
+        for (directory in storageDirectories(context)) {
             context.contentResolver.query(
                 COLLECTION_URI,
                 arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
@@ -92,7 +97,7 @@ object FileStore {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeFor(filename))
-            put(MediaStore.MediaColumns.RELATIVE_PATH, RELATIVE_DIR)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativeDir(context))
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
 

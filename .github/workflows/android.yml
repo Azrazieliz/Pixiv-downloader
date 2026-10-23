@@ -19,8 +19,22 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Test and build debug APK
-        run: gradle test assembleDebug --stacktrace
+        run: gradle testDebugUnitTest testPreviewUnitTest assembleDebug assemblePreview --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: PixivDumpSync-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Verify distinct preview package
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging app/build/outputs/apk/debug/app-debug.apk | grep "package: name='com.azrael.pixivdumpsync'"
+          "$AAPT" dump badging app/build/outputs/apk/preview/app-preview.apk | grep "package: name='com.azrael.pixivdumpsync.nocturne'"
+          "$AAPT" dump badging app/build/outputs/apk/preview/app-preview.apk | grep "application-label:'Nocturne Preview'"
+
+      - name: Upload independently installable Nocturne preview APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nocturne-Preview-v0.8.1-apk
+          path: app/build/outputs/apk/preview/app-preview.apk
+          if-no-files-found: error

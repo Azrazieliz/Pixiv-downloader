@@ -63,7 +63,7 @@ object RoundSyncBridge {
             setPadding(32, 12, 32, 12)
         }
         panel.addView(TextView(activity).apply {
-            text = "Create a COPY task in Round Sync first. Set local source: Downloads/GalleryFlow/ and remote destination: your TeraBox folder. Use COPY, not mirror/sync-delete."
+            text = "Create a COPY task in Round Sync first. Set local source: Downloads/" + activity.getString(com.azrael.pixivdumpsync.R.string.gallery_download_folder) + "/ and remote destination: your TeraBox folder. Use COPY, not mirror/sync-delete."
         })
         val check = CheckBox(activity).apply {
             text = "Request backup after downloads"
