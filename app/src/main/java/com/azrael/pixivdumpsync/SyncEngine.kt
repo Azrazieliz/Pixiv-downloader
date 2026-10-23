@@ -142,6 +142,10 @@ class SyncEngine(private val context: Context) {
                 SyncControl.forceFinish(finalMessage)
             }
             released = true
+            if (stats.pagesDownloaded > 0 && mode != SyncMode.CLOUD &&
+                RoundSyncBridge.enabled(context) && finalMessage != "Stopped") {
+                progress(RoundSyncBridge.trigger(context))
+            }
             return finish(stats, mode)
         } finally {
             db.close()

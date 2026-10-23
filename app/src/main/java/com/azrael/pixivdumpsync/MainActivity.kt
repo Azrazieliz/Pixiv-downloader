@@ -474,6 +474,28 @@ class MainActivity : Activity() {
             }
         }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(8) })
         root.addView(cloudCard, cardParams())
+        val roundSyncCard = card()
+        roundSyncCard.addView(TextView(this).apply {
+            text = "Round Sync / TeraBox"
+            UiKit.title(this, 16f)
+        })
+        roundSyncCard.addView(TextView(this).apply {
+            text = "Alternative to official TeraBox OAuth. Configure Round Sync to COPY Downloads/Kuroha/ to a TeraBox remote. NDUS credentials stay in Round Sync; local files are retained."
+            UiKit.body(this, 12f)
+        })
+        roundSyncCard.addView(Button(this).apply {
+            text = "Round Sync settings"
+            UiKit.styleSecondaryButton(this@MainActivity, this)
+            setOnClickListener { RoundSyncBridge.showSettings(this@MainActivity) }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(12) })
+        roundSyncCard.addView(Button(this).apply {
+            text = "Run Round Sync backup"
+            UiKit.stylePrimaryButton(this@MainActivity, this)
+            setOnClickListener {
+                Toast.makeText(this@MainActivity, RoundSyncBridge.trigger(this@MainActivity), Toast.LENGTH_LONG).show()
+            }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
+        root.addView(roundSyncCard, cardParams())
 
 
 
