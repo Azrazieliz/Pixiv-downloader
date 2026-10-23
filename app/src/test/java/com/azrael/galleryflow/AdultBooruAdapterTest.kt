@@ -23,7 +23,7 @@ class AdultBooruAdapterTest {
         val rule34 = AdultBooruAdapter(SourceId.RULE34)
         val tags = URI("https://rule34.xxx/index.php?page=post&s=list&tags=blue_archive+solo")
         val entity = rule34.resolveEntity(tags.toString())
-        assertTrue(entity.displayName.contains("blue archive solo"))
+        assertTrue(entity.displayName.contains("blue_archive solo"))
         assertTrue(entity.canonicalUrl.contains("pid=0"))
         val post = rule34.resolveEntity("https://rule34.xxx/index.php?page=post&s=view&id=123456")
         assertTrue(post.displayName.contains("id:123456"))

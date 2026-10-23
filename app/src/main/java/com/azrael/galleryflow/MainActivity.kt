@@ -144,7 +144,7 @@ class MainActivity : Activity() {
                     "Danbooru - tagged image API" to "https://danbooru.donmai.us/posts",
                     "e621 - tagged image API" to "https://e621.net/posts",
                     "ImageFap - public gallery HTML (experimental)" to "https://www.imagefap.com/",
-                    "Erome - public albums (experimental)" to "https://www.erome.com/",
+                    "Erome - public albums (experimental)" to "https://erome.com/",
                     "PornPics - public galleries (experimental)" to "https://www.pornpics.com/"
                 )
                 AlertDialog.Builder(this@MainActivity)

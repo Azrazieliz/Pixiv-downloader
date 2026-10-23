@@ -136,9 +136,10 @@ class AdultBooruAdapter(override val source: SourceId) : SourceAdapter {
     }
 
     private fun fetchJson(url: String): Any {
-        if (source == SourceId.E621) synchronized(gate) {
+        synchronized(gate) {
             val diff = System.currentTimeMillis() - lastRequestMs
-            if (diff < 1200L) Thread.sleep(1200L - diff)
+            val interval = if (source == SourceId.E621) 1200L else 400L
+            if (diff < interval) Thread.sleep(interval - diff)
             lastRequestMs = System.currentTimeMillis()
         }
         val conn = URL(url).openConnection() as HttpURLConnection
