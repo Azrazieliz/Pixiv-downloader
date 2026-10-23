@@ -167,7 +167,7 @@ class SyncEngine(private val context: Context) {
             val (meta, mediaItems) = adapter.fetchGallery(ref)
             db.updateGalleryMeta(meta, mediaItems.size)
             // Metadata is read before downloading any gallery image.
-            val excluded = TagExclusions.firstBlocked(meta.tags, Prefs.excludedTags(context))
+            val excluded = TagExclusions.firstBlocked(meta.tags, Prefs.effectiveExcludedTags(context, entity.entityId))
             if (excluded != null) {
                 db.setGalleryState(meta.source, meta.stableId, TransferState.SKIPPED, "Excluded tag: $excluded")
                 stats.galleriesSkippedTags++
@@ -178,6 +178,15 @@ class SyncEngine(private val context: Context) {
             for ((position, media) in mediaItems.withIndex()) {
                 if (!SyncControl.checkpoint()) return false
                 db.upsertMedia(entity.entityId, media)
+                val blockedPost = TagExclusions.firstBlocked(
+                    media.tags, Prefs.effectiveExcludedTags(context, entity.entityId))
+                if (blockedPost != null) {
+                    val saved = db.media(media.source, media.stableId)
+                    if (saved?.state != TransferState.COMPLETE || !files.exists(saved.contentUri)) {
+                        db.setMediaState(media.source, media.stableId, TransferState.SKIPPED)
+                    }
+                    continue
+                }
                 val existing = db.media(media.source, media.stableId)
                 if (existing != null && existing.state == TransferState.COMPLETE && files.exists(existing.contentUri)) continue
                 if (existing != null && !files.exists(existing.contentUri)) {
@@ -224,7 +233,10 @@ class SyncEngine(private val context: Context) {
             val records = db.galleryMedia(meta.source, meta.stableId)
             val diskComplete = records.isNotEmpty() &&
                 records.size >= mediaItems.size &&
-                records.all { it.state == TransferState.COMPLETE && files.exists(it.contentUri) }
+                records.all {
+                    it.state == TransferState.SKIPPED ||
+                        (it.state == TransferState.COMPLETE && files.exists(it.contentUri))
+                }
 
             if (allComplete && diskComplete) {
                 db.setGalleryState(meta.source, meta.stableId, TransferState.COMPLETE)

@@ -49,7 +49,7 @@ class DownloaderHubActivity : Activity() {
         pixiv.setOnClickListener { startActivity(Intent(this, MainActivity::class.java)) }
         root.addView(pixiv, params(12))
         val gallery = tile("KYORA", "Image sites & galleries",
-            "Saved websites  ·  backfill  ·  flat files  ·  tag blocking", purple)
+            "Saved websites · booru sites · adult galleries · tag blocking", purple)
         gallery.setOnClickListener { openGalleries() }
         root.addView(gallery, params(12))
 

@@ -122,7 +122,7 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
         GalleryRef(source, digest(url).take(32), entity.stableId, url, title.take(160))
 
     private fun looksGalleryPage(path: String): Boolean =
-        Regex("/(gallery|galleries|album|albums|post|posts|photo|photos|cosplay|sets|images|p)/[^/?#]+",
+        Regex("/(gallery|galleries|album|albums|post|posts|photo|photos|cosplay|sets|images|p|a)/[^/?#]+",
             RegexOption.IGNORE_CASE).containsMatchIn(path)
 
     private fun validUri(url: String): URI {

@@ -6,6 +6,16 @@ object Prefs {
     private const val NAME = "galleryflow_prefs"
     private const val AUTO_SYNC = "auto_sync"
     private const val EXCLUDED_TAGS = "excluded_tags"
+    fun siteExcludedTags(context: Context, entityId: String): String =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .getString("blocked_for_" + entityId, "").orEmpty()
+    fun setSiteExcludedTags(context: Context, entityId: String, text: String) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+            .putString("blocked_for_" + entityId, text.trim()).apply()
+    }
+    fun effectiveExcludedTags(context: Context, entityId: String): String =
+        excludedTags(context) + "\n" + siteExcludedTags(context, entityId)
+
     fun excludedTags(context: Context): String =
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getString(EXCLUDED_TAGS, "").orEmpty()
     fun setExcludedTags(context: Context, text: String) {
