@@ -16,6 +16,9 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.ImageView
+import android.util.Size
+import java.util.concurrent.Executors
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -24,6 +27,7 @@ import android.widget.Toast
 
 class MainActivity : Activity() {
     private var siteFilter: String? = null
+    private val thumbnailPool = Executors.newFixedThreadPool(2)
     private lateinit var addressInput: EditText
     private lateinit var status: TextView
     private lateinit var entityList: LinearLayout
@@ -55,6 +59,11 @@ class MainActivity : Activity() {
         renderEntities()
         handler.removeCallbacks(poll)
         handler.post(poll)
+    }
+
+    override fun onDestroy() {
+        thumbnailPool.shutdownNow()
+        super.onDestroy()
     }
 
     override fun onPause() {
@@ -318,6 +327,67 @@ class MainActivity : Activity() {
                 card,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) }
             )
+        }
+        if (siteFilter != null) renderGalleryCards(entities.firstOrNull()?.entityId)
+    }
+
+    private fun renderGalleryCards(entityId: String?) {
+        if (entityId == null) return
+        val galleries = GalleryDb(this).use { it.galleryCards(entityId) }
+        val header = label("GALLERIES / ${galleries.size} RECENT", 13f, ACCENT).apply {
+            setPadding(0, dp(16), 0, dp(8))
+        }
+        entityList.addView(header)
+        entityList.addView(Button(this).apply {
+            text = "Refresh gallery list"
+            setOnClickListener { renderEntities() }
+        }, LinearLayout.LayoutParams(-1, dp(42)))
+        if (galleries.isEmpty()) {
+            entityList.addView(label("No galleries cataloged yet. Run Backfill for this site.", 13f, MUTED))
+            return
+        }
+        for (gallery in galleries) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                setBackgroundColor(SURFACE)
+                isClickable = true
+                isFocusable = true
+            }
+            val thumb = ImageView(this).apply {
+                setImageResource(android.R.drawable.ic_menu_gallery)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(BG)
+            }
+            card.addView(thumb, LinearLayout.LayoutParams(dp(92), dp(92)))
+            val details = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(10), 0, 0, 0)
+            }
+            details.addView(label(gallery.title.take(90), 14f, Color.WHITE))
+            details.addView(label("${gallery.count} images / ${gallery.state}", 12f, MUTED))
+            card.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+            card.setOnClickListener {
+                startActivity(Intent(this, GalleryDetailActivity::class.java)
+                    .putExtra(GalleryDetailActivity.EXTRA_GALLERY_ID, gallery.galleryId)
+                    .putExtra(GalleryDetailActivity.EXTRA_SOURCE, gallery.source.wireName)
+                    .putExtra(GalleryDetailActivity.EXTRA_TITLE, gallery.title))
+            }
+            entityList.addView(card, LinearLayout.LayoutParams(-1, dp(108)).apply {
+                bottomMargin = dp(7)
+            })
+            if (gallery.firstUri != null) {
+                val uri = Uri.parse(gallery.firstUri)
+                thumbnailPool.execute {
+                    val bitmap = runCatching {
+                        contentResolver.loadThumbnail(uri, Size(250, 250), null)
+                    }.getOrNull()
+                    if (bitmap != null) runOnUiThread {
+                        if (!isFinishing && thumb.parent != null) thumb.setImageBitmap(bitmap)
+                    }
+                }
+            }
         }
     }
 

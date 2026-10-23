@@ -18,6 +18,7 @@
         <activity android:name=".FollowingActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name="com.azrael.galleryflow.MainActivity" android:exported="false" />
+        <activity android:name="com.azrael.galleryflow.GalleryDetailActivity" android:exported="false" />
         <activity android:name=".DownloaderHubActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

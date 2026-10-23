@@ -97,6 +97,32 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
         )
     }
 
+    data class GalleryCard(
+        val source: SourceId, val galleryId: String, val title: String,
+        val count: Int, val state: String, val firstUri: String?
+    )
+
+    fun galleryCards(entityId: String, limit: Int = 80): List<GalleryCard> {
+        val result = ArrayList<GalleryCard>()
+        val sql = """
+            SELECT g.source, g.gallery_id, g.title, g.media_count, g.state,
+              (SELECT m.content_uri FROM media m WHERE m.source=g.source
+               AND m.gallery_id=g.gallery_id AND m.content_uri IS NOT NULL
+               AND m.state='complete' ORDER BY m.media_index LIMIT 1)
+            FROM galleries g WHERE g.entity_id=?
+            ORDER BY COALESCE(g.retrieved_at, 0) DESC, g.gallery_id DESC
+            LIMIT ?
+        """.trimIndent()
+        readableDatabase.rawQuery(sql, arrayOf(entityId, limit.coerceIn(1, 100).toString())).use { cursor ->
+            while (cursor.moveToNext()) result.add(GalleryCard(
+                SourceId.fromWire(cursor.getString(0)), cursor.getString(1),
+                cursor.getString(2), cursor.getInt(3), cursor.getString(4),
+                cursor.getString(5)
+            ))
+        }
+        return result
+    }
+
     fun listEntities(): List<EntityRecord> {
         val out = mutableListOf<EntityRecord>()
         readableDatabase.query(
