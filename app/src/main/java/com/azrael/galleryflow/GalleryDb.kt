@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 
-class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 1) {
+class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE entities(
             source TEXT NOT NULL,
@@ -17,6 +17,7 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
             selected INTEGER NOT NULL DEFAULT 1,
             live_enabled INTEGER NOT NULL DEFAULT 1,
             live_cursor TEXT,
+            backfill_page INTEGER NOT NULL DEFAULT 0,
             last_sync_at INTEGER,
             last_error TEXT,
             PRIMARY KEY(source, entity_id)
@@ -72,7 +73,33 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
         db.execSQL("CREATE INDEX idx_media_gallery ON media(source, gallery_id)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE entities ADD COLUMN backfill_page INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
+    fun backfillPage(source: SourceId, entityId: String): Int {
+        readableDatabase.rawQuery(
+            "SELECT backfill_page FROM entities WHERE source=? AND entity_id=?",
+            arrayOf(source.wireName, entityId)
+        ).use { cursor ->
+            return if (cursor.moveToFirst()) cursor.getInt(0).coerceAtLeast(0) else 0
+        }
+    }
+
+    fun setBackfillPage(source: SourceId, entityId: String, nextPage: Int) {
+        require(nextPage >= 0)
+        writableDatabase.update("entities", ContentValues().apply {
+            put("backfill_page", nextPage)
+            put("last_sync_at", System.currentTimeMillis())
+        }, "source=? AND entity_id=?", arrayOf(source.wireName, entityId))
+    }
+
+    fun restartBackfill(source: SourceId, entityId: String) {
+        setBackfillPage(source, entityId, 0)
+        setEntityError(source, entityId, null)
+    }
 
     fun addEntity(entity: SourceEntity) {
         val values = ContentValues().apply {

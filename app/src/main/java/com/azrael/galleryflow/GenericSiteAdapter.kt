@@ -33,33 +33,65 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
             yield(toGallery(entity, url, entity.displayName))
             return@sequence
         }
-        val doc = http.document(url)
-        val host = URI(url).host.lowercase(Locale.ROOT)
-        val candidates = discoverGalleryLinks(doc, host).take(MAX_GALLERIES)
-        if (candidates.isEmpty()) {
-            yield(toGallery(entity, url, doc.title().ifBlank { entity.displayName }))
-        } else {
-            // Each site remains a separate tracked source; only the discovered links are crawled.
-            for ((link, title) in candidates) yield(toGallery(entity, link, title))
+        val visited = linkedSetOf<String>()
+        val found = linkedSetOf<String>()
+        var next: String? = url
+        while (next != null && visited.size < MAX_LISTING_PAGES) {
+            if (!SyncControl.checkpoint()) return@sequence
+            val current = next
+            if (!visited.add(current)) break
+            val doc = http.document(current)
+            val host = URI(current).host.lowercase(Locale.ROOT)
+            val links = discoverGalleryLinks(doc, host)
+            if (links.isEmpty() && visited.size == 1) {
+                yield(toGallery(entity, current, doc.title().ifBlank { entity.displayName }))
+            } else for ((link, title) in links) {
+                if (found.add(link)) yield(toGallery(entity, link, title))
+            }
+            next = nextListingPage(doc, current, visited)
+        }
+        if (next != null && visited.size >= MAX_LISTING_PAGES) {
+            throw AdapterException("Reached $MAX_LISTING_PAGES listing pages. " +
+                "Narrow this site to a category or gallery URL.")
         }
     }
 
-    override fun fetchGallery(gallery: GalleryRef): Pair<GalleryMeta,List<MediaRef>> {
+    override fun fetchGallery(gallery: GalleryRef): Pair<GalleryMeta, List<MediaRef>> {
         val url = canonical(validUri(gallery.canonicalUrl))
-        val doc = http.document(url)
-        val links = extractImageLinks(doc).take(MAX_IMAGES)
-        if (links.isEmpty()) throw AdapterException(
-            "No static gallery images detected; this site may require JavaScript or an adapter.")
+        val visited = linkedSetOf<String>()
+        val images = linkedMapOf<String, Pair<String, String>>()
+        var next: String? = url
+        var title: String? = null
+        var tags: List<String> = emptyList()
+        while (next != null && visited.size < MAX_GALLERY_PAGES) {
+            if (!SyncControl.checkpoint()) throw SyncCancelledException()
+            val current = next
+            if (!visited.add(current)) break
+            val doc = http.document(current)
+            if (title == null) {
+                title = doc.selectFirst("h1")?.text()?.takeIf(String::isNotBlank)
+                    ?: doc.title().ifBlank { gallery.title }
+                tags = extractTags(doc)
+            }
+            for (image in extractImageLinks(doc)) {
+                images.putIfAbsent(image, image to current)
+            }
+            next = nextListingPage(doc, current, visited)
+        }
+        if (next != null && visited.size >= MAX_GALLERY_PAGES) {
+            throw AdapterException("This album exceeds $MAX_GALLERY_PAGES pages. " +
+                "Backfill paused rather than silently omitting images.")
+        }
+        if (images.isEmpty()) throw AdapterException(
+            "No static gallery images detected. The site may need login or JavaScript.")
         val meta = GalleryMeta(source, gallery.stableId, gallery.entityStableId, url,
-            doc.selectFirst("h1")?.text()?.takeIf(String::isNotBlank)
-                ?: doc.title().ifBlank { gallery.title },
-            extractTags(doc), null, listOf(url))
-        val media = links.mapIndexed { index, link ->
-            val normalized = URI(link).let {
+            title ?: gallery.title, tags, null, visited.toList())
+        val media = images.values.mapIndexed { index, (image, referer) ->
+            val normalized = URI(image).let {
                 URI(it.scheme, it.authority, it.path, null, null).toString()
             }
             MediaRef(source, digest(url + "|" + normalized).take(32),
-                gallery.stableId, index, link, normalized, url, mime(link))
+                gallery.stableId, index, image, normalized, referer, mime(image))
         }
         return meta to media
     }
@@ -118,6 +150,47 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
         return found.toList()
     }
 
+    /**
+     * Only advance to a paging URL for this exact listing/album, never to the
+     * site's next unrelated gallery. Supports rel=next, /page/N and ?page=N.
+     */
+    internal fun nextListingPage(doc: Document, current: String, visited: Set<String>): String? {
+        val currentUri = URI(current)
+        val basePath = currentUri.path.trimEnd('/')
+            .replace(Regex("/(?:page|p)/\\d+$", RegexOption.IGNORE_CASE), "")
+        val currentIndex = pageNumber(currentUri)
+        val links = doc.select("a[href],link[rel=next][href]").mapNotNull { anchor ->
+            val href = anchor.absUrl("href").ifBlank {
+                absolute(current, anchor.attr("href")).orEmpty()
+            }
+            val uri = runCatching { URI(href) }.getOrNull() ?: return@mapNotNull null
+            if (href in visited || uri.host?.lowercase(Locale.ROOT) !=
+                currentUri.host?.lowercase(Locale.ROOT)) return@mapNotNull null
+            val sameListing = uri.path.trimEnd('/') == basePath ||
+                uri.path.trimEnd('/').matches(Regex(Regex.escape(basePath) +
+                    "/(?:page|p)/\\d+", RegexOption.IGNORE_CASE))
+            if (!sameListing) return@mapNotNull null
+            val label = anchor.text().trim().lowercase(Locale.ROOT)
+            val next = anchor.attr("rel").contains("next", true) ||
+                anchor.classNames().any { it.contains("next", true) } ||
+                anchor.attr("aria-label").contains("next", true) ||
+                label in setOf("next", "next page", "older", "›", "»", "→")
+            val number = pageNumber(uri)
+            if (!next && number <= currentIndex) return@mapNotNull null
+            Triple(if (next) 0 else 1, number, href)
+        }
+        return links.minWithOrNull(compareBy<Triple<Int,Int,String>> { it.first }
+            .thenBy { it.second })?.third
+    }
+
+    private fun pageNumber(uri: URI): Int {
+        val raw = uri.query.orEmpty()
+        val number = Regex("(?:^|&)(?:page|paged|p|offset)=(\\d+)", RegexOption.IGNORE_CASE)
+            .find(raw)?.groupValues?.get(1)?.toIntOrNull()
+        return number ?: Regex("/(?:page|p)/(\\d+)/?$", RegexOption.IGNORE_CASE)
+            .find(uri.path)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+    }
+
     private fun toGallery(entity: SourceEntity, url: String, title: String): GalleryRef =
         GalleryRef(source, digest(url).take(32), entity.stableId, url, title.take(160))
 
@@ -168,5 +241,10 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
         else -> null
     }
 
-    companion object { const val MAX_GALLERIES = 80; const val MAX_IMAGES = 500 }
+    companion object {
+        const val MAX_GALLERIES = 180
+        const val MAX_IMAGES = 500
+        const val MAX_LISTING_PAGES = 500
+        const val MAX_GALLERY_PAGES = 200
+    }
 }

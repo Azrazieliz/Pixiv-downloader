@@ -85,13 +85,29 @@ class KiutakuAdapter(private val http: HttpClient) : SourceAdapter {
         val first = http.document(gallery.canonicalUrl)
         docs[gallery.canonicalUrl] = first
 
-        val pages = first.select("a[href]")
-            .map { absolute(it, "href") }
-            .filter { isGalleryPaginationUrl(gallery.canonicalUrl, it) }
-            .distinct()
-            .sortedBy { paginationNumber(gallery.canonicalUrl, it) }
-
-        for (url in pages) if (url !in docs) docs[url] = http.document(url, gallery.canonicalUrl)
+        // Some galleries expose only adjacent page links, not every page in
+        // the first document. Traverse each newly found page until exhausted.
+        val pending = ArrayDeque<String>()
+        val queued = hashSetOf(gallery.canonicalUrl)
+        fun enqueue(doc: Document) {
+            doc.select("a[href]")
+                .map { absolute(it, "href") }
+                .filter { isGalleryPaginationUrl(gallery.canonicalUrl, it) }
+                .sortedBy { paginationNumber(gallery.canonicalUrl, it) }
+                .forEach { if (queued.add(it)) pending.addLast(it) }
+        }
+        enqueue(first)
+        while (pending.isNotEmpty()) {
+            if (!SyncControl.checkpoint()) throw SyncCancelledException()
+            if (docs.size >= MAX_GALLERY_PAGES) {
+                throw AdapterException("Kiutaku gallery exceeds $MAX_GALLERY_PAGES pages. " +
+                    "Backfill paused rather than silently missing images.")
+            }
+            val url = pending.removeFirst()
+            val doc = http.document(url, gallery.canonicalUrl)
+            docs[url] = doc
+            enqueue(doc)
+        }
 
         val meta = GalleryMeta(
             source = source,
@@ -243,6 +259,7 @@ class KiutakuAdapter(private val http: HttpClient) : SourceAdapter {
         .joinToString("") { byte -> "%02x".format(byte) }
 
     companion object {
+        private const val MAX_GALLERY_PAGES = 600
         private val TAG_PATH = Regex("/tag/(\\d+)")
         private val GALLERY_PATH = Regex("/(\\d+)")
         private val IMAGE_EXTENSIONS = listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
