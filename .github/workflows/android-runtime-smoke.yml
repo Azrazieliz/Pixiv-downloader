@@ -22,7 +22,7 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle assembleDebug assemblePreview --stacktrace
 
       - name: Enable KVM
         run: |
@@ -39,6 +39,13 @@ jobs:
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/preview/app-preview.apk
+            adb shell pm list packages | grep '^package:com.azrael.pixivdumpsync$'
+            adb shell pm list packages | grep '^package:com.azrael.pixivdumpsync.nocturne$'
+            adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.azrael.pixivdumpsync.DownloaderHubActivity
+            sleep 3
+            adb exec-out screencap -p > nocturne-preview-hub.png
+            adb shell pidof -s com.azrael.pixivdumpsync.nocturne | grep -Eq '[0-9]+' || { echo "Preview did not launch"; exit 1; }
             adb logcat -c
             adb shell am force-stop com.azrael.pixivdumpsync
             adb shell am start -W -n com.azrael.pixivdumpsync/.DownloaderHubActivity
@@ -56,5 +63,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: asterion-downloader-hub-screenshot
-          path: asterion-downloader-hub.png
+          path: |
+            asterion-downloader-hub.png
+            nocturne-preview-hub.png
           if-no-files-found: warn

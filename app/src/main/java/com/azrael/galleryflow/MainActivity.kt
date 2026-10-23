@@ -79,7 +79,7 @@ class MainActivity : Activity() {
         }
         scroll.addView(root)
 
-        root.addView(label("KYORA  /  GALLERY SOURCES", 26f, Color.WHITE))
+        root.addView(label(getString(com.azrael.pixivdumpsync.R.string.gallery_page_brand), 26f, Color.WHITE))
         root.addView(label("Individual sources • flat image archive • tag filters", 13f, MUTED))
         root.addView(label(
             if (siteFilter != null) "Sync scope: selected website" else "Sync scope: all enabled websites",
@@ -222,7 +222,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(18), 0, dp(6))
         })
         root.addView(label(
-            "Configure a Round Sync COPY task from Downloads/GalleryFlow to your TeraBox remote. Downloads remain on this device until transfer is confirmed in Round Sync.",
+            "Configure a Round Sync COPY task from Downloads/" + getString(com.azrael.pixivdumpsync.R.string.gallery_download_folder) + " to your TeraBox remote. Downloads remain on this device until transfer is confirmed in Round Sync.",
             12f, MUTED
         ))
         root.addView(Button(this).apply {
@@ -463,7 +463,7 @@ class MainActivity : Activity() {
             }
             runOnUiThread {
                 result.onSuccess {
-                    Toast.makeText(this, "Exported to Downloads/GalleryFlow/exports", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Exported to Downloads/" + getString(com.azrael.pixivdumpsync.R.string.gallery_download_folder) + "/exports", Toast.LENGTH_LONG).show()
                 }.onFailure {
                     Toast.makeText(this, it.message ?: "Export failed", Toast.LENGTH_LONG).show()
                 }

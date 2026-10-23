@@ -40,6 +40,13 @@ android {
     }
 
     buildTypes {
+        create("preview") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".nocturne"
+            versionNameSuffix = "-nocturne-preview"
+            isDebuggable = true
+            matchingFallbacks += listOf("debug")
+        }
         release {
             isMinifyEnabled = false
             if (hasOriginalSigningKey) {
