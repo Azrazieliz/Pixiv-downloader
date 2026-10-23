@@ -102,7 +102,7 @@ class MainActivity : Activity() {
         words.addView(ui.text(this@MainActivity, "NOCTURNE", 17f, ui.white, true).apply {
             letterSpacing = .16f
         })
-        words.addView(ui.text(this@MainActivity, "IMAGE WORKSPACE", 10f, ui.secondary, true).apply {
+        words.addView(ui.text(this@MainActivity, "KYORA / COSPLAY", 10f, ui.secondary, true).apply {
             letterSpacing = .12f
         })
         head.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
@@ -208,7 +208,7 @@ class MainActivity : Activity() {
             return
         }
         siteFilter = null
-        heading("Your library", "Every source and downloaded gallery in one place.")
+        heading("Kyora library", "Cosplay sites and galleries that you choose to add.")
         val hero = ui.card(this@MainActivity, 21).apply {
             background = ui.shape(this@MainActivity, ui.soft, 23)
             addView(ui.eyebrow(this@MainActivity, "CONNECTED SOURCES"))
@@ -225,8 +225,8 @@ class MainActivity : Activity() {
         section("Saved websites", entities.size.toString() + " SOURCES")
         if (entities.isEmpty()) {
             panel.addView(message("Your library is empty",
-                "Browse supported image sources or paste an individual gallery URL to begin."))
-            panel.addView(ui.action(this@MainActivity, "Explore image websites") {
+                "Add a cosplay website, creator page or individual gallery URL when you need it."))
+            panel.addView(ui.action(this@MainActivity, "Add a website") {
                 go(Page.DISCOVER)
             }, ui.lp(this@MainActivity, 13))
             return
@@ -284,26 +284,6 @@ class MainActivity : Activity() {
         card.addView(ui.action(this@MainActivity, "Block tags for this website") {
             showSiteExcludedTagsDialog(entity.entityId)
         }, ui.lp(this@MainActivity, 10))
-        if (AdapterRegistry.forSource(entity.source) is PagedBackfillAdapter) {
-            val next = GalleryDb(this).use {
-                it.backfillPage(entity.source, entity.entityId) + 1
-            }
-            card.addView(ui.text(this@MainActivity,
-                "Historical backfill: next page $next. Backfill resumes here.",
-                12f, ui.secondary), ui.lp(this@MainActivity, 11))
-            card.addView(ui.action(this@MainActivity, "Restart history scan from page 1") {
-                AlertDialog.Builder(this)
-                    .setTitle("Restart historical backfill?")
-                    .setMessage("Previously downloaded files remain saved and won't be downloaded twice. The next Backfill will scan from page one.")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Restart") { _, _ ->
-                        GalleryDb(this).use { db ->
-                            db.restartBackfill(entity.source, entity.entityId)
-                        }
-                        renderCurrent()
-                    }.show()
-            }, ui.lp(this@MainActivity, 8))
-        }
         card.addView(switched("Include in bulk sync", entity.selected) {
             GalleryDb(this).use { db -> db.setSelected(entity.source, entity.entityId, it) }
         }, ui.lp(this@MainActivity, 14))
@@ -313,6 +293,19 @@ class MainActivity : Activity() {
         if (!entity.lastError.isNullOrBlank())
             card.addView(ui.text(this@MainActivity, "Last issue: " + entity.lastError, 12f, ui.danger),
                 ui.lp(this@MainActivity, 11))
+        card.addView(ui.action(this@MainActivity, "Remove website from library") {
+            AlertDialog.Builder(this)
+                .setTitle("Remove this website?")
+                .setMessage("This stops tracking the website and hides it from Kyora. Existing downloaded files will not be deleted. You can add the URL again later.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Remove") { _, _ ->
+                    GalleryDb(this).use { db ->
+                        db.archiveEntity(entity.source, entity.entityId)
+                    }
+                    siteFilter = null
+                    renderCurrent()
+                }.show()
+        }, ui.lp(this@MainActivity, 12))
         panel.addView(card)
         val retryCount = GalleryDb(this).use {
             it.retryCount(entity.source, entity.entityId)
@@ -374,11 +367,11 @@ class MainActivity : Activity() {
     }
 
     private fun renderDiscover() {
-        heading("Add a website", "Find a supported source or connect a specific gallery URL.")
+        heading("Add a website", "Add cosplay galleries or other image websites whenever you choose.")
         val entry = ui.card(this@MainActivity, 20)
         entry.addView(ui.eyebrow(this@MainActivity, "WEBSITE OR ALBUM URL"))
         addressInput = EditText(this).apply {
-            hint = "https://example.com/gallery/..."
+            hint = "https://example.com/album/..."
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_URI
@@ -391,53 +384,20 @@ class MainActivity : Activity() {
         entry.addView(addressInput, LinearLayout.LayoutParams(-1, dp(54)).apply {
             topMargin = dp(14)
         })
-        entry.addView(ui.action(this@MainActivity, "Add to my library", true) {
+        entry.addView(ui.action(this@MainActivity, "Add website to Kyora", true) {
             addSite()
         }, ui.lp(this@MainActivity, 12))
         panel.addView(entry)
-        section("Supported websites", "TAP TO SELECT")
-        val presets = listOf(
-            Triple("Rule34", "Tagged images · API", "https://rule34.xxx/index.php?page=post&s=list&tags="),
-            Triple("Gelbooru", "Tagged images · API", "https://gelbooru.com/index.php?page=post&s=list&tags="),
-            Triple("Danbooru", "Illustration archive · API", "https://danbooru.donmai.us/posts?tags="),
-            Triple("e621", "Tagged image archive · API", "https://e621.net/posts?tags="),
-            Triple("ImageFap", "Public galleries · experimental", "https://www.imagefap.com/"),
-            Triple("Erome", "Public albums · experimental", "https://erome.com/"),
-            Triple("PornPics", "Public galleries · experimental", "https://www.pornpics.com/")
-        )
-        presets.forEach { (name, summary, url) ->
-            val tile = ui.row(this@MainActivity).apply {
-                setPadding(dp(14), dp(13), dp(14), dp(13))
-                background = ui.touch(this@MainActivity, ui.surface, 17)
-                isClickable = true
-                isFocusable = true
-            }
-            tile.addView(ui.text(this@MainActivity, name.take(1), 21f, ui.primary, true).apply {
-                gravity = Gravity.CENTER
-                background = ui.shape(this@MainActivity, ui.soft, 13, ui.soft)
-            }, LinearLayout.LayoutParams(dp(47), dp(47)))
-            val words = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), 0, 0, 0)
-            }
-            words.addView(ui.text(this@MainActivity, name, 16f, ui.white, true))
-            words.addView(ui.text(this@MainActivity, summary, 12f, ui.secondary))
-            tile.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
-            tile.addView(ui.text(this@MainActivity, "+", 25f, ui.primary))
-            tile.setOnClickListener {
-                addressInput.setText(url)
-                addressInput.setSelection(addressInput.length())
-                scroller.smoothScrollTo(0, 0)
-                Toast.makeText(this,
-                    if (url.endsWith("tags=")) "Enter a tag after tags=, then tap Add."
-                    else "You can replace this with a specific gallery URL.",
-                    Toast.LENGTH_LONG).show()
-            }
-            panel.addView(tile, ui.lp(this@MainActivity, 0, 9))
-        }
+
+        section("How it works")
+        panel.addView(message("Your sites, your choice",
+            "No website catalog is preloaded. Paste a public website, gallery or album URL above to add it as a separate source."))
         panel.addView(ui.text(this@MainActivity,
-            "Public HTML galleries may require login, JavaScript or a dedicated adapter.",
-            12f, ui.subdued), ui.lp(this@MainActivity, 15))
+            "For example, paste a PornPics gallery URL when you choose to add that site.",
+            12f, ui.subdued), ui.lp(this@MainActivity, 12))
+        panel.addView(ui.text(this@MainActivity,
+            "Kuroha handles Pixiv separately. Kyora preserves your cosplay galleries, tag exclusions, flat image archive and Round Sync settings.",
+            12f, ui.subdued), ui.lp(this@MainActivity, 16))
     }
 
     private fun addSite() {
@@ -565,7 +525,7 @@ class MainActivity : Activity() {
         }
         AlertDialog.Builder(this)
             .setTitle("Exclude tags for this site only")
-            .setMessage("Booru image tags are checked per image before downloading. Global exclusions also apply. Existing files are not deleted.")
+            .setMessage("Matching source and gallery tags are excluded. Global exclusions also apply. Previously downloaded images are not deleted.")
             .setView(editor)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save") { _, _ ->

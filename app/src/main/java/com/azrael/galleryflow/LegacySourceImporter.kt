@@ -40,7 +40,8 @@ class LegacySourceImporter(private val context: Context) {
                         }
                         reader.endObject()
                         val sourceId = SourceId.entries.firstOrNull { it.wireName == source }
-                        if (sourceId != null && id.isNotBlank() && url.startsWith("http") &&
+                        if (sourceId != null && AdapterRegistry.available(sourceId) &&
+                            id.isNotBlank() && url.startsWith("http") &&
                             states.size < 20000) {
                             states.add(SourceState(SourceEntity(sourceId, id,
                                 name.ifBlank { url }, url, kind), selected, live))

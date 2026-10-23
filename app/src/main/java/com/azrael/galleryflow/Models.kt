@@ -1,5 +1,7 @@
 package com.azrael.galleryflow
 
+// Retired wire values stay to read old databases without deleting user data.
+// Only KIUTAKU and GENERIC have active download adapters.
 enum class SourceId(val wireName: String) {
     KIUTAKU("kiutaku"),
     FOUR_K_HD("4khd"),
