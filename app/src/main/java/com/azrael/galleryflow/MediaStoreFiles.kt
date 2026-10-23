@@ -21,6 +21,11 @@ class MediaStoreFiles(private val context: Context, private val http: HttpClient
     fun download(entity: EntityRecord, gallery: GalleryMeta, media: MediaRef): DownloadResult {
         if (!SyncControl.checkpoint()) throw SyncCancelledException()
         http.open(media.url, media.referer).use { response ->
+            val actualType = response.contentType.orEmpty().lowercase()
+            if (actualType.startsWith("text/") ||
+                actualType.contains("json") || actualType.contains("html")) {
+                throw java.io.IOException("Image URL returned a web page, not a photograph")
+            }
             val mime = response.contentType?.takeIf { it.startsWith("image/") }
                 ?: media.mimeHint ?: "application/octet-stream"
             val ext = extensionFor(mime, media.url)
@@ -46,6 +51,11 @@ class MediaStoreFiles(private val context: Context, private val http: HttpClient
                         digest.update(buffer, 0, read)
                         bytes += read
                     }
+                }
+                if (bytes == 0L || (response.contentLength > 0L &&
+                    bytes != response.contentLength)) {
+                    throw java.io.IOException("Image download was truncated: " +
+                        bytes + " / " + response.contentLength + " bytes")
                 }
                 context.contentResolver.update(
                     uri,

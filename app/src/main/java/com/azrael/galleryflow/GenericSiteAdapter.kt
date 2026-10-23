@@ -30,7 +30,16 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
     override fun enumerateGalleries(entity: SourceEntity): Sequence<GalleryRef> = sequence {
         val url = canonical(validUri(entity.canonicalUrl))
         if (entity.kind == "gallery_only") {
-            yield(toGallery(entity, url, entity.displayName))
+            val doc = documentWithRetry(url)
+            val host = URI(url).host.lowercase(Locale.ROOT)
+            val nestedAlbums = discoverGalleryLinks(doc, host).filter { (link, _) ->
+                link != url && !link.startsWith(url.trimEnd('/') + "/page/")
+            }
+            // A profile/collection may be provided as an album-like URL.
+            if (nestedAlbums.size >= 2) {
+                for ((link, title) in nestedAlbums)
+                    yield(toGallery(entity, link, title))
+            } else yield(toGallery(entity, url, entity.displayName))
             return@sequence
         }
         val visited = linkedSetOf<String>()
@@ -40,7 +49,7 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
             if (!SyncControl.checkpoint()) return@sequence
             val current = next
             if (!visited.add(current)) break
-            val doc = http.document(current)
+            val doc = documentWithRetry(current)
             val host = URI(current).host.lowercase(Locale.ROOT)
             val links = discoverGalleryLinks(doc, host)
             if (links.isEmpty() && visited.size == 1) {
@@ -58,42 +67,93 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
 
     override fun fetchGallery(gallery: GalleryRef): Pair<GalleryMeta, List<MediaRef>> {
         val url = canonical(validUri(gallery.canonicalUrl))
-        val visited = linkedSetOf<String>()
-        val images = linkedMapOf<String, Pair<String, String>>()
+        val visitedAlbumPages = linkedSetOf<String>()
+        val photoLinks = linkedSetOf<String>()
+        val inlineImages = linkedMapOf<String, AlbumImageExtractor.Item>()
         var next: String? = url
         var title: String? = null
         var tags: List<String> = emptyList()
-        while (next != null && visited.size < MAX_GALLERY_PAGES) {
+        while (next != null && visitedAlbumPages.size < MAX_GALLERY_PAGES) {
             if (!SyncControl.checkpoint()) throw SyncCancelledException()
             val current = next
-            if (!visited.add(current)) break
-            val doc = http.document(current)
+            if (!visitedAlbumPages.add(current)) break
+            val doc = documentWithRetry(current)
             if (title == null) {
                 title = doc.selectFirst("h1")?.text()?.takeIf(String::isNotBlank)
                     ?: doc.title().ifBlank { gallery.title }
                 tags = extractTags(doc)
             }
-            for (image in extractImageLinks(doc)) {
-                images.putIfAbsent(image, image to current)
+            val photos = AlbumImageExtractor.photoPages(doc, url)
+            photoLinks.addAll(photos)
+            if (photoLinks.size > MAX_PHOTO_PAGES)
+                throw AdapterException("Album has more than $MAX_PHOTO_PAGES photo pages; " +
+                    "a source-specific adapter is needed for complete backfill.")
+            for (image in AlbumImageExtractor.directImages(doc)) {
+                inlineImages.putIfAbsent(image.url, image)
             }
-            next = nextListingPage(doc, current, visited)
+            next = nextListingPage(doc, current, visitedAlbumPages)
         }
-        if (next != null && visited.size >= MAX_GALLERY_PAGES) {
-            throw AdapterException("This album exceeds $MAX_GALLERY_PAGES pages. " +
-                "Backfill paused rather than silently omitting images.")
+        if (next != null && visitedAlbumPages.size >= MAX_GALLERY_PAGES)
+            throw AdapterException("Album pagination exceeds $MAX_GALLERY_PAGES pages; " +
+                "images were not marked complete.")
+
+        val images = linkedMapOf<String, AlbumImageExtractor.Item>()
+        if (photoLinks.isNotEmpty()) {
+            // Photo detail pages frequently expose the original that the album
+            // listing deliberately hides behind a small preview.
+            for ((n, link) in photoLinks.withIndex()) {
+                if (!SyncControl.checkpoint()) throw SyncCancelledException()
+                val doc = documentWithRetry(link, url)
+                val original = AlbumImageExtractor.originals(doc, link)
+                if (original.isEmpty()) {
+                    throw AdapterException("Photo " + (n + 1) +
+                        " has no downloadable original: " + link)
+                }
+                for (image in original) images.putIfAbsent(image.url, image)
+            }
+        } else {
+            images.putAll(inlineImages)
         }
-        if (images.isEmpty()) throw AdapterException(
-            "No static gallery images detected. The site may need login or JavaScript.")
+        if (images.isEmpty()) {
+            throw AdapterException("No original image files discovered in this album; " +
+                "the site may need login, JavaScript or a dedicated adapter.")
+        }
         val meta = GalleryMeta(source, gallery.stableId, gallery.entityStableId, url,
-            title ?: gallery.title, tags, null, visited.toList())
-        val media = images.values.mapIndexed { index, (image, referer) ->
-            val normalized = URI(image).let {
-                URI(it.scheme, it.authority, it.path, null, null).toString()
-            }
+            title ?: gallery.title, tags, null, visitedAlbumPages.toList() +
+                photoLinks.toList())
+        val media = images.values.mapIndexed { index, item ->
+            val uri = URI(item.url)
+            val normalized = URI(uri.scheme, uri.authority, uri.path, null, null).toString()
             MediaRef(source, digest(url + "|" + normalized).take(32),
-                gallery.stableId, index, image, normalized, referer, mime(image))
+                gallery.stableId, index, item.url, normalized, item.referer, mime(item.url))
         }
         return meta to media
+    }
+
+    private fun documentWithRetry(url: String, referer: String? = null): Document {
+        var last: Throwable? = null
+        for (attempt in 0..2) {
+            if (!SyncControl.checkpoint()) throw SyncCancelledException()
+            try {
+                return http.document(url, referer)
+            } catch (e: HttpStatusException) {
+                if (e.code !in listOf(408, 429, 500, 502, 503, 504)) throw e
+                last = e
+            } catch (e: java.io.IOException) {
+                last = e
+            }
+            if (attempt < 2) {
+                val delay = if (last is HttpStatusException &&
+                    (last as HttpStatusException).code == 429) 4000L else 1500L
+                var waited = 0L
+                while (waited < delay) {
+                    if (!SyncControl.checkpoint()) throw SyncCancelledException()
+                    Thread.sleep(250L)
+                    waited += 250L
+                }
+            }
+        }
+        throw (last ?: AdapterException("Page request failed"))
     }
 
     internal fun extractTags(doc: Document): List<String> {
@@ -143,7 +203,9 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
             val link = absolute(doc.baseUri(), a.attr("href")) ?: continue
             val uri = runCatching { URI(link) }.getOrNull() ?: continue
             if (uri.host?.lowercase(Locale.ROOT) != host) continue
-            if (!looksGalleryPage(uri.path)) continue
+            if (!looksGalleryPage(uri.path) ||
+                Regex("/(?:photo|pic|picture|image)/[^/]+$", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(uri.path)) continue
             found.putIfAbsent(canonical(uri), a.text().ifBlank { uri.path })
             if (found.size >= MAX_GALLERIES) break
         }
@@ -168,7 +230,9 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
                 currentUri.host?.lowercase(Locale.ROOT)) return@mapNotNull null
             val sameListing = uri.path.trimEnd('/') == basePath ||
                 uri.path.trimEnd('/').matches(Regex(Regex.escape(basePath) +
-                    "/(?:page|p)/\\d+", RegexOption.IGNORE_CASE))
+                    "/(?:page|p)/\\d+", RegexOption.IGNORE_CASE)) ||
+                uri.path.trimEnd('/').matches(Regex(Regex.escape(basePath) +
+                    "/\\d+", RegexOption.IGNORE_CASE))
             if (!sameListing) return@mapNotNull null
             val label = anchor.text().trim().lowercase(Locale.ROOT)
             val next = anchor.attr("rel").contains("next", true) ||
@@ -188,7 +252,9 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
         val number = Regex("(?:^|&)(?:page|paged|p|offset)=(\\d+)", RegexOption.IGNORE_CASE)
             .find(raw)?.groupValues?.get(1)?.toIntOrNull()
         return number ?: Regex("/(?:page|p)/(\\d+)/?$", RegexOption.IGNORE_CASE)
-            .find(uri.path)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            .find(uri.path)?.groupValues?.get(1)?.toIntOrNull()
+            ?: uri.path.trimEnd('/').substringAfterLast('/').toIntOrNull()
+            ?: 1
     }
 
     private fun toGallery(entity: SourceEntity, url: String, title: String): GalleryRef =
@@ -242,9 +308,10 @@ class GenericSiteAdapter(private val http: HttpClient) : SourceAdapter {
     }
 
     companion object {
-        const val MAX_GALLERIES = 180
-        const val MAX_IMAGES = 500
-        const val MAX_LISTING_PAGES = 500
-        const val MAX_GALLERY_PAGES = 200
+        const val MAX_GALLERIES = 5000
+        const val MAX_IMAGES = 10000
+        const val MAX_LISTING_PAGES = 1500
+        const val MAX_GALLERY_PAGES = 1500
+        const val MAX_PHOTO_PAGES = 10000
     }
 }

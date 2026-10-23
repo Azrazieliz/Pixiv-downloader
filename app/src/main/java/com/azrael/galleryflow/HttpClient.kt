@@ -17,8 +17,8 @@ object NetworkRequestRegistry {
     }
 }
 
-class HttpClient {
-    fun document(url: String, referer: String? = null): Document {
+open class HttpClient {
+    open fun document(url: String, referer: String? = null): Document {
         if (!SyncControl.checkpoint()) throw SyncCancelledException()
         val connection = Jsoup.connect(url)
             .userAgent(USER_AGENT)

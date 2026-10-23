@@ -130,30 +130,37 @@ class SyncEngine(private val context: Context) {
                     adapter.backfillFrom(entity.toSourceEntity(),
                         db.backfillPage(entity.source, entity.entityId))
                 else adapter.enumerateGalleries(entity.toSourceEntity())
-                var incomplete = false
+                var failedCount = 0
+                // Retry a bounded batch of historical failures, then continue onward.
+                for (retry in db.pendingRetries(entity)) {
+                    if (!SyncControl.checkpoint()) return
+                    progress("Retrying failed gallery: " + retry.title)
+                    if (processGallery(entity, retry, adapter, db, files, flow, stats, progress)) {
+                        db.clearRetry(retry)
+                    } else {
+                        failedCount++
+                        stats.incompleteGalleries++
+                        db.queueRetry(retry, "Gallery still incomplete")
+                    }
+                }
                 for (gallery in pages) {
                     if (!SyncControl.checkpoint()) return
                     if (adapter is PagedBackfillAdapter) {
                         val index = adapter.pageIndex(gallery)
-                        val message = "${entity.displayName} / page ${index + 1} / " +
-                            "${stats.mediaDownloaded} new images"
+                        val message = entity.displayName + " / page " + (index + 1) + " / " +
+                            stats.mediaDownloaded + " new images"
                         SyncControl.updateMessage(message)
                         progress(message)
                     }
                     val completed = processGallery(entity, gallery, adapter, db, files,
                         flow, stats, progress)
-                    if (!completed) {
+                    if (completed) {
+                        db.clearRetry(gallery)
+                    } else {
+                        db.queueRetry(gallery, "Incomplete album or download error")
+                        failedCount++
                         stats.incompleteGalleries++
-                        val index = if (adapter is PagedBackfillAdapter)
-                            adapter.pageIndex(gallery) + 1 else null
-                        val reason = "Backfill paused at " +
-                            (if (index != null) "page $index" else gallery.title) +
-                            ": gallery incomplete; restart Backfill to resume."
-                        db.setEntityError(entity.source, entity.entityId, reason)
-                        SyncControl.updateMessage(reason)
-                        progress(reason)
-                        incomplete = true
-                        break
+                        progress("Queued failed album for retry: " + gallery.title)
                     }
                     if (adapter is PagedBackfillAdapter) {
                         db.setBackfillPage(entity.source, entity.entityId,
@@ -166,7 +173,13 @@ class SyncEngine(private val context: Context) {
                         progress("Resuming " + prefix)
                     }
                 }
-                if (!incomplete) db.setEntityError(entity.source, entity.entityId, null)
+                val retryCount = db.retryCount(entity.source, entity.entityId)
+                db.setEntityError(entity.source, entity.entityId,
+                    if (retryCount > 0) retryCount.toString() +
+                        " galleries need retry; Backfill continued past them." else null)
+                if (failedCount > 0) {
+                    progress(failedCount.toString() + " galleries queued for retry.")
+                }
             } catch (t: Throwable) {
                 if (SyncControl.isStopping() || t is SyncCancelledException) return
                 stats.errors++
@@ -241,7 +254,7 @@ class SyncEngine(private val context: Context) {
                 SyncControl.updateMessage(meta.title + " • " + (position + 1) + "/" + mediaItems.size)
                 db.markMediaDownloading(media)
                 try {
-                    val fresh = files.download(entity, meta, media)
+                    val fresh = downloadWithRetry(files, entity, meta, media)
                     val duplicate = db.findCompleteByHash(fresh.sha256)
                     if (duplicate != null && files.exists(duplicate.contentUri)) {
                         files.delete(fresh.contentUri)
@@ -304,6 +317,34 @@ class SyncEngine(private val context: Context) {
             db.setGalleryState(ref.source, ref.stableId, TransferState.RETRYING, t.message ?: t.javaClass.simpleName)
             false
         }
+    }
+
+    private fun downloadWithRetry(files: MediaStoreFiles, entity: EntityRecord,
+                                  meta: GalleryMeta, media: MediaRef): DownloadResult {
+        var last: Throwable? = null
+        for (attempt in 0..3) {
+            if (!SyncControl.checkpoint()) throw SyncCancelledException()
+            try {
+                return files.download(entity, meta, media)
+            } catch (e: HttpStatusException) {
+                if (e.code !in listOf(408, 429, 500, 502, 503, 504)) throw e
+                last = e
+            } catch (e: java.io.IOException) {
+                last = e
+            }
+            if (attempt < 3) {
+                val pauseMs = if (last is HttpStatusException &&
+                    (last as HttpStatusException).code == 429) 5000L
+                    else 1200L * (attempt + 1)
+                var slept = 0L
+                while (slept < pauseMs) {
+                    if (!SyncControl.checkpoint()) throw SyncCancelledException()
+                    Thread.sleep(200L)
+                    slept += 200L
+                }
+            }
+        }
+        throw (last ?: java.io.IOException("Transfer retry exhausted"))
     }
 
     private fun EntityRecord.toSourceEntity() =
