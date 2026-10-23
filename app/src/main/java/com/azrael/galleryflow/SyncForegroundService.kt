@@ -17,6 +17,7 @@ class SyncForegroundService : Service() {
         const val ACTION_RESUME = "com.azrael.galleryflow.RESUME"
         const val ACTION_STOP = "com.azrael.galleryflow.STOP"
         const val EXTRA_MODE = "sync_mode"
+        const val EXTRA_SITE_ID = "target_site_id"
         private const val CHANNEL_ID = "galleryflow_sync"
         private const val NOTIFICATION_ID = 91
     }
@@ -53,7 +54,9 @@ class SyncForegroundService : Service() {
         startForeground(NOTIFICATION_ID, notification())
         currentRun = executor.submit {
             try {
-                SyncEngine(applicationContext).run(mode) { notifyNow() }
+                SyncEngine(applicationContext).run(
+                    mode, targetEntityId = intent?.getStringExtra(EXTRA_SITE_ID)
+                ) { notifyNow() }
             } finally {
                 notifyNow()
                 stopForeground(STOP_FOREGROUND_REMOVE)

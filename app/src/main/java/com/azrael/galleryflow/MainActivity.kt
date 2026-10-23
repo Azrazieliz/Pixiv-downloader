@@ -81,6 +81,10 @@ class MainActivity : Activity() {
 
         root.addView(label("KYORA  /  GALLERY SOURCES", 26f, Color.WHITE))
         root.addView(label("Individual sources • flat image archive • tag filters", 13f, MUTED))
+        root.addView(label(
+            if (siteFilter != null) "Sync scope: selected website" else "Sync scope: all enabled websites",
+            12f, ACCENT
+        ))
         root.addView(Button(this).apply {
             text = "← All sites"
             setOnClickListener { siteFilter = null; renderEntities() }
@@ -396,6 +400,7 @@ class MainActivity : Activity() {
             Intent(this, SyncForegroundService::class.java)
                 .setAction(SyncForegroundService.ACTION_START)
                 .putExtra(SyncForegroundService.EXTRA_MODE, mode.name)
+                .putExtra(SyncForegroundService.EXTRA_SITE_ID, siteFilter)
         )
     }
 

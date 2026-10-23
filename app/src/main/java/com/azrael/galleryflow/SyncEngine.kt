@@ -15,7 +15,7 @@ class SyncEngine(private val context: Context) {
 
     private val http = HttpClient()
 
-    fun run(mode: SyncMode, progress: (String) -> Unit = {}): Stats {
+    fun run(mode: SyncMode, targetEntityId: String? = null, progress: (String) -> Unit = {}): Stats {
         val stats = Stats()
         if (!SyncControl.tryStart(mode, queueLiveIfBusy = true)) return stats
         val db = GalleryDb(context)
@@ -24,8 +24,8 @@ class SyncEngine(private val context: Context) {
         try {
             SyncControl.setMode(mode)
             when (mode) {
-                SyncMode.LIVE -> runLive(db, files, flow, stats, progress)
-                SyncMode.BACKFILL -> runBackfill(db, files, flow, stats, progress)
+                SyncMode.LIVE -> runLive(db, files, flow, stats, progress, targetEntityId)
+                SyncMode.BACKFILL -> runBackfill(db, files, flow, stats, progress, targetEntityId)
             }
             while (!SyncControl.isStopping() && SyncControl.takePendingLive()) {
                 SyncControl.setMode(SyncMode.LIVE)
@@ -53,9 +53,12 @@ class SyncEngine(private val context: Context) {
         files: MediaStoreFiles,
         flow: FlowLinkEmitter,
         stats: Stats,
-        progress: (String) -> Unit
+        progress: (String) -> Unit,
+        targetEntityId: String? = null
     ) {
-        val entities = db.listEntities().filter { it.selected && it.liveEnabled }
+        val entities = db.listEntities().filter {
+            it.selected && it.liveEnabled && (targetEntityId == null || it.entityId == targetEntityId)
+        }
         stats.entities = maxOf(stats.entities, entities.size)
         for ((entityIndex, entity) in entities.withIndex()) {
             if (!SyncControl.checkpoint()) return
@@ -98,9 +101,12 @@ class SyncEngine(private val context: Context) {
         files: MediaStoreFiles,
         flow: FlowLinkEmitter,
         stats: Stats,
-        progress: (String) -> Unit
+        progress: (String) -> Unit,
+        targetEntityId: String? = null
     ) {
-        val entities = db.listEntities().filter { it.selected }
+        val entities = db.listEntities().filter {
+            it.selected && (targetEntityId == null || it.entityId == targetEntityId)
+        }
         stats.entities = maxOf(stats.entities, entities.size)
         for ((entityIndex, entity) in entities.withIndex()) {
             if (!SyncControl.checkpoint()) return
