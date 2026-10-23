@@ -21,8 +21,8 @@ android {
         applicationId = "com.azrael.pixivdumpsync"
         minSdk = 29
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.7.1"
+        versionCode = 20
+        versionName = "0.8.0"
 
         testInstrumentationRunner = "android.app.Instrumentation"
     }
@@ -59,5 +59,6 @@ kotlin {
 }
 
 dependencies {
+    implementation("org.jsoup:jsoup:1.18.1")
     testImplementation("junit:junit:4.13.2")
 }
