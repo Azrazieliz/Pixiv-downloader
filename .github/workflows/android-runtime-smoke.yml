@@ -2,6 +2,7 @@ name: Android 16 Runtime Smoke Test
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
     branches: [ "main" ]
 
@@ -45,6 +46,9 @@ jobs:
             adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.azrael.pixivdumpsync.DownloaderHubActivity
             sleep 3
             adb exec-out screencap -p > nocturne-preview-hub.png
+            adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.azrael.galleryflow.MainActivity
+            sleep 3
+            adb exec-out screencap -p > nocturne-gallery-ui.png
             adb shell pidof -s com.azrael.pixivdumpsync.nocturne | grep -Eq '[0-9]+' || { echo "Preview did not launch"; exit 1; }
             adb logcat -c
             adb shell am force-stop com.azrael.pixivdumpsync
@@ -66,4 +70,5 @@ jobs:
           path: |
             asterion-downloader-hub.png
             nocturne-preview-hub.png
+            nocturne-gallery-ui.png
           if-no-files-found: warn
