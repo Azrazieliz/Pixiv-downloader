@@ -43,16 +43,4 @@ class BackfillPaginationTest {
         """, url)
         assertNull(generic.nextListingPage(doc, url, setOf(url)))
     }
-
-    @Test fun numericBooruPagingIsResumableAndUncappedAtEight() {
-        val adult = AdultBooruAdapter(SourceId.RULE34)
-        val entity = adult.resolveEntity(
-            "https://rule34.xxx/index.php?page=post&s=list&tags=artist_tag")
-        assertEquals(0, adult.pageIndex(GalleryRef(SourceId.RULE34, "g", entity.stableId,
-            entity.canonicalUrl, "Page one")))
-        val next = entity.canonicalUrl.replace("pid=0", "pid=16")
-        assertEquals(16, adult.pageIndex(GalleryRef(SourceId.RULE34, "g", entity.stableId,
-            next, "Page seventeen")))
-        assertTrue(AdultBooruAdapter.MAX_BACKFILL_PAGES > 8)
-    }
 }

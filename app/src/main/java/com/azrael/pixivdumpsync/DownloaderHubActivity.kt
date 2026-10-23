@@ -52,33 +52,33 @@ class DownloaderHubActivity : Activity() {
                 "Everything worth\nkeeping, in one place.", 29f, design.white, true),
                 design.lp(this@DownloaderHubActivity, 11))
             addView(design.text(this@DownloaderHubActivity,
-                "Manage Pixiv art and image galleries with separate queues, filters and archives.",
+                 "Kuroha for Pixiv. Kyora for cosplay galleries. Add other websites only when you want them.",
                 13f, design.secondary), design.lp(this@DownloaderHubActivity, 11, 18))
-            addView(design.action(this@DownloaderHubActivity, "Add a new image source", true) {
+            addView(design.action(this@DownloaderHubActivity, "Add a website to Kyora", true) {
                 openGallery(add = true)
             })
         }
         root.addView(hero, design.lp(this, 27))
 
         root.addView(design.eyebrow(this, "YOUR WORKSPACES"), design.lp(this, 27, 12))
-        root.addView(workspace("01", "Pixiv Library",
-            "Following feed, artists, favorites and downloads",
+        root.addView(workspace("01", "KUROHA  /  PIXIV",
+            "Artists, following feed and artwork downloads",
             design.violet) {
             startActivity(Intent(this, MainActivity::class.java))
         })
-        root.addView(workspace("02", "Image Galleries",
-            "Individual websites, collections and tagged images",
+        root.addView(workspace("02", "KYORA  /  COSPLAY",
+            "Cosplay creators, albums and flat photo archive",
             design.primary) { openGallery() }, design.lp(this, 11))
 
         val title = design.row(this)
-        title.addView(design.text(this, "Saved websites", 19f, design.white, true),
+        title.addView(design.text(this, "Kyora websites", 19f, design.white, true),
             LinearLayout.LayoutParams(0, -2, 1f))
         title.addView(design.chip(this, "+ Add") { openGallery(add = true) })
         root.addView(title, design.lp(this, 32, 13))
         savedSites = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(savedSites)
         root.addView(design.text(this,
-            "New image websites are kept separately. Open a source to configure downloads and blocked tags.",
+             "No extra sites are bundled. Add or remove websites directly in Kyora without affecting Kuroha.",
             12f, design.subdued), design.lp(this, 14))
         setContentView(screen)
     }
@@ -121,9 +121,9 @@ class DownloaderHubActivity : Activity() {
                 addView(design.text(this@DownloaderHubActivity,
                     "No additional sources yet", 15f, design.white, true))
                 addView(design.text(this@DownloaderHubActivity,
-                    "Explore supported galleries and add your first URL.",
+                     "Add a cosplay source or paste a gallery URL when you need it.",
                     12f, design.secondary), design.lp(this@DownloaderHubActivity, 8))
-                addView(design.action(this@DownloaderHubActivity, "Explore websites") {
+                addView(design.action(this@DownloaderHubActivity, "Add a website") {
                     openGallery(add = true)
                 }, design.lp(this@DownloaderHubActivity, 12))
             })

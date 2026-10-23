@@ -11,8 +11,7 @@ class SyncEngine(private val context: Context) {
         var mediaDeduped: Int = 0,
         var galleriesSkippedTags: Int = 0,
         var errors: Int = 0,
-        var incompleteGalleries: Int = 0,
-        var backfillPages: Int = 0
+        var incompleteGalleries: Int = 0
     )
 
     private val http = HttpClient()
@@ -43,7 +42,7 @@ class SyncEngine(private val context: Context) {
                     "${stats.incompleteGalleries} incomplete galleries. Check source details."
             else mode.name.lowercase().replaceFirstChar { it.uppercase() } +
                 " complete: ${stats.galleriesCompleted} galleries, " +
-                "${stats.backfillPages} pages, ${stats.galleriesSkippedTags} tag-skipped"
+                "${stats.galleriesSkippedTags} tag-skipped"
             SyncControl.finish(if (SyncControl.isStopping()) "Stopped" else label)
         } catch (t: Throwable) {
             if (!SyncControl.isStopping() && t !is SyncCancelledException) stats.errors++
@@ -126,10 +125,7 @@ class SyncEngine(private val context: Context) {
             SyncControl.updateMessage(prefix)
             progress(prefix)
             try {
-                val pages = if (adapter is PagedBackfillAdapter)
-                    adapter.backfillFrom(entity.toSourceEntity(),
-                        db.backfillPage(entity.source, entity.entityId))
-                else adapter.enumerateGalleries(entity.toSourceEntity())
+                val pages = adapter.enumerateGalleries(entity.toSourceEntity())
                 var failedCount = 0
                 // Retry a bounded batch of historical failures, then continue onward.
                 for (retry in db.pendingRetries(entity)) {
@@ -145,13 +141,10 @@ class SyncEngine(private val context: Context) {
                 }
                 for (gallery in pages) {
                     if (!SyncControl.checkpoint()) return
-                    if (adapter is PagedBackfillAdapter) {
-                        val index = adapter.pageIndex(gallery)
-                        val message = entity.displayName + " / page " + (index + 1) + " / " +
-                            stats.mediaDownloaded + " new images"
-                        SyncControl.updateMessage(message)
-                        progress(message)
-                    }
+                    val message = entity.displayName + " / " +
+                        stats.mediaDownloaded + " new images"
+                    SyncControl.updateMessage(message)
+                    progress(message)
                     val completed = processGallery(entity, gallery, adapter, db, files,
                         flow, stats, progress)
                     if (completed) {
@@ -161,11 +154,6 @@ class SyncEngine(private val context: Context) {
                         failedCount++
                         stats.incompleteGalleries++
                         progress("Queued failed album for retry: " + gallery.title)
-                    }
-                    if (adapter is PagedBackfillAdapter) {
-                        db.setBackfillPage(entity.source, entity.entityId,
-                            adapter.pageIndex(gallery) + 1)
-                        stats.backfillPages++
                     }
                     if (serviceQueuedLive(db, files, flow, stats, progress)) {
                         SyncControl.setMode(SyncMode.BACKFILL)
@@ -183,10 +171,7 @@ class SyncEngine(private val context: Context) {
             } catch (t: Throwable) {
                 if (SyncControl.isStopping() || t is SyncCancelledException) return
                 stats.errors++
-                val index = if (adapter is PagedBackfillAdapter)
-                    db.backfillPage(entity.source, entity.entityId) + 1 else null
-                val reason = "Backfill failed " +
-                    (if (index != null) "at page $index: " else ": ") +
+                val reason = "Backfill failed: " +
                     (t.message ?: t.javaClass.simpleName)
                 db.setEntityError(entity.source, entity.entityId, reason)
                 SyncControl.updateMessage(reason)

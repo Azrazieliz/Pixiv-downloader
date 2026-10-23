@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 
-class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 3) {
+class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 4) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE entities(
             source TEXT NOT NULL,
@@ -16,6 +16,7 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
             kind TEXT NOT NULL,
             selected INTEGER NOT NULL DEFAULT 1,
             live_enabled INTEGER NOT NULL DEFAULT 1,
+            archived INTEGER NOT NULL DEFAULT 0,
             live_cursor TEXT,
             backfill_page INTEGER NOT NULL DEFAULT 0,
             last_sync_at INTEGER,
@@ -79,6 +80,15 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
             db.execSQL("ALTER TABLE entities ADD COLUMN backfill_page INTEGER NOT NULL DEFAULT 0")
         }
         if (oldVersion < 3) createRetryTable(db)
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE entities ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+            // Retired bundled providers are no longer visible or scheduled.
+            // Their historical catalogs, images, and metadata are preserved.
+            db.execSQL("""
+                UPDATE entities SET archived=1, selected=0, live_enabled=0
+                WHERE source NOT IN ('kiutaku','generic')
+            """.trimIndent())
+        }
     }
 
     private fun createRetryTable(db: SQLiteDatabase) {
@@ -142,28 +152,6 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
             arrayOf(source.wireName, entityId)
         ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
-    fun backfillPage(source: SourceId, entityId: String): Int {
-        readableDatabase.rawQuery(
-            "SELECT backfill_page FROM entities WHERE source=? AND entity_id=?",
-            arrayOf(source.wireName, entityId)
-        ).use { cursor ->
-            return if (cursor.moveToFirst()) cursor.getInt(0).coerceAtLeast(0) else 0
-        }
-    }
-
-    fun setBackfillPage(source: SourceId, entityId: String, nextPage: Int) {
-        require(nextPage >= 0)
-        writableDatabase.update("entities", ContentValues().apply {
-            put("backfill_page", nextPage)
-            put("last_sync_at", System.currentTimeMillis())
-        }, "source=? AND entity_id=?", arrayOf(source.wireName, entityId))
-    }
-
-    fun restartBackfill(source: SourceId, entityId: String) {
-        setBackfillPage(source, entityId, 0)
-        setEntityError(source, entityId, null)
-    }
-
     fun addEntity(entity: SourceEntity) {
         val values = ContentValues().apply {
             put("source", entity.source.wireName)
@@ -173,8 +161,15 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
             put("kind", entity.kind)
             put("selected", 1)
             put("live_enabled", 1)
+            put("archived", 0)
         }
         writableDatabase.insertWithOnConflict("entities", null, values, SQLiteDatabase.CONFLICT_IGNORE)
+        // Re-adding an archived site restores it; normal existing settings stay unchanged.
+        writableDatabase.execSQL(
+            "UPDATE entities SET archived=0, selected=1, live_enabled=1 " +
+                "WHERE source=? AND entity_id=? AND archived=1",
+            arrayOf(entity.source.wireName, entity.stableId)
+        )
         writableDatabase.update(
             "entities",
             ContentValues().apply {
@@ -218,7 +213,8 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
         readableDatabase.query(
             "entities",
             arrayOf("source","entity_id","display_name","canonical_url","kind","selected","live_enabled","live_cursor","last_sync_at","last_error"),
-            null,null,null,null,"display_name COLLATE NOCASE ASC"
+            "archived=0 AND source IN ('kiutaku','generic')",
+            null,null,null,"display_name COLLATE NOCASE ASC"
         ).use { c ->
             while (c.moveToNext()) {
                 out += EntityRecord(
@@ -236,6 +232,14 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
             }
         }
         return out
+    }
+
+    fun archiveEntity(source: SourceId, entityId: String) {
+        writableDatabase.update("entities", ContentValues().apply {
+            put("archived", 1)
+            put("selected", 0)
+            put("live_enabled", 0)
+        }, "source=? AND entity_id=?", arrayOf(source.wireName, entityId))
     }
 
     fun setSelected(source: SourceId, entityId: String, value: Boolean) =

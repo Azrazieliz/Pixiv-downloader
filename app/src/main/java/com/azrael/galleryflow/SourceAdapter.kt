@@ -10,9 +10,3 @@ interface SourceAdapter {
     fun enumerateGalleries(entity: SourceEntity): Sequence<GalleryRef>
     fun fetchGallery(gallery: GalleryRef): Pair<GalleryMeta, List<MediaRef>>
 }
-
-/** Implements a resumable numeric page cursor, independent of Live scans. */
-interface PagedBackfillAdapter : SourceAdapter {
-    fun backfillFrom(entity: SourceEntity, page: Int): Sequence<GalleryRef>
-    fun pageIndex(ref: GalleryRef): Int
-}
