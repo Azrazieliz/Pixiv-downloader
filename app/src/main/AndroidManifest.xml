@@ -16,12 +16,26 @@
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity android:name=".LoginActivity" android:exported="false" />
         <activity android:name=".FollowingActivity" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="false" />
+        <activity android:name="com.azrael.galleryflow.MainActivity" android:exported="false" />
+        <activity android:name="com.azrael.galleryflow.GalleryDetailActivity" android:exported="false" />
+        <activity android:name=".DownloaderHubActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service android:name="com.azrael.galleryflow.SyncForegroundService"
+            android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name="com.azrael.galleryflow.SyncJobService"
+            android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver android:name="com.azrael.galleryflow.BootReceiver"
+            android:enabled="true" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".SyncForegroundService"
             android:exported="false"

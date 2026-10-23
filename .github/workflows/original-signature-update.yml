@@ -84,7 +84,7 @@ jobs:
       - name: Upload upgrade-compatible signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: Kuroha-v0.7.0-original-signature-upgrade
+          name: AsterionDownloader-v0.8.0-original-signature-upgrade
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
