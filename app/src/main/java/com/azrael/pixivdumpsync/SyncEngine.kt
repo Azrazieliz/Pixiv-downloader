@@ -143,8 +143,9 @@ class SyncEngine(private val context: Context) {
             }
             released = true
             if (stats.pagesDownloaded > 0 && mode != SyncMode.CLOUD &&
-                RoundSyncBridge.enabled(context) && finalMessage != "Stopped") {
-                progress(RoundSyncBridge.trigger(context))
+                NduSettings.configured(context) && finalMessage != "Stopped") {
+                runCatching { NduUploadService.launch(context) }
+                    .onFailure { progress("NDUS upload queued; open Cloud backup to retry") }
             }
             return finish(stats, mode)
         } finally {

@@ -474,28 +474,31 @@ class MainActivity : Activity() {
             }
         }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(8) })
         root.addView(cloudCard, cardParams())
-        val roundSyncCard = card()
-        roundSyncCard.addView(TextView(this).apply {
-            text = "Round Sync / TeraBox"
-            UiKit.title(this, 16f)
+        val ndusCard = card()
+        ndusCard.addView(TextView(this).apply {
+            text = "TeraBox Direct / NDUS"
+            UiKit.title(this,16f)
         })
-        roundSyncCard.addView(TextView(this).apply {
-            text = "Alternative to official TeraBox OAuth. Configure Round Sync to COPY Downloads/" + getString(R.string.pixiv_download_folder) + "/ to a TeraBox remote. NDUS credentials stay in Round Sync; local files are retained."
-            UiKit.body(this, 12f)
+        ndusCard.addView(TextView(this).apply {
+            text = "Upload Pixiv images directly using an encrypted NDUS cookie. No Round Sync needed. Images stay on your phone."
+            UiKit.body(this,12f)
         })
-        roundSyncCard.addView(Button(this).apply {
-            text = "Round Sync settings"
-            UiKit.styleSecondaryButton(this@MainActivity, this)
-            setOnClickListener { RoundSyncBridge.showSettings(this@MainActivity) }
-        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(12) })
-        roundSyncCard.addView(Button(this).apply {
-            text = "Run Round Sync backup"
-            UiKit.stylePrimaryButton(this@MainActivity, this)
-            setOnClickListener {
-                Toast.makeText(this@MainActivity, RoundSyncBridge.trigger(this@MainActivity), Toast.LENGTH_LONG).show()
-            }
-        }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) })
-        root.addView(roundSyncCard, cardParams())
+        ndusCard.addView(Button(this).apply {
+            text = "Configure direct TeraBox"
+            UiKit.styleSecondaryButton(this@MainActivity,this)
+            setOnClickListener { NduSettingsDialog.show(this@MainActivity) }
+        },LinearLayout.LayoutParams(-1,dp(46)).apply { topMargin=dp(12) })
+        ndusCard.addView(Button(this).apply {
+            text = "Upload pending NDUS queue"
+            UiKit.stylePrimaryButton(this@MainActivity,this)
+            setOnClickListener { NduSettingsDialog.start(this@MainActivity) }
+        },LinearLayout.LayoutParams(-1,dp(48)).apply { topMargin=dp(8) })
+        ndusCard.addView(Button(this).apply {
+            text = "Queue all existing Pixiv / cosplay images"
+            UiKit.styleSecondaryButton(this@MainActivity,this)
+            setOnClickListener { NduSettingsDialog.start(this@MainActivity,true) }
+        },LinearLayout.LayoutParams(-1,dp(46)).apply { topMargin=dp(8) })
+        root.addView(ndusCard,cardParams())
 
 
 

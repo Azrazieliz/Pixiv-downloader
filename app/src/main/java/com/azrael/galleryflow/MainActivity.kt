@@ -489,17 +489,19 @@ class MainActivity : Activity() {
         panel.addView(filters)
         section("Cloud backup")
         val cloud = ui.card(this@MainActivity)
-        cloud.addView(ui.text(this@MainActivity, "Round Sync / TeraBox", 18f, ui.white, true))
-        val folder = getString(com.azrael.pixivdumpsync.R.string.gallery_download_folder)
+        cloud.addView(ui.text(this@MainActivity,"Direct TeraBox upload",18f,ui.white,true))
         cloud.addView(ui.text(this@MainActivity,
-            "Copy Downloads/" + folder + "/ to your cloud storage. Confirm finished uploads inside Round Sync.",
-            13f, ui.secondary), ui.lp(this@MainActivity, 7, 13))
-        cloud.addView(ui.action(this@MainActivity, "Configure Round Sync") {
-            RoundSyncBridge.showSettings(this)
+            "Paste your NDUS cookie once. Upload saved cosplay images directly to TeraBox without Round Sync.",
+            13f,ui.secondary),ui.lp(this@MainActivity,7,13))
+        cloud.addView(ui.action(this@MainActivity,"Configure TeraBox / NDUS") {
+            com.azrael.pixivdumpsync.NduSettingsDialog.show(this)
         })
-        cloud.addView(ui.action(this@MainActivity, "Start backup task") {
-            Toast.makeText(this, RoundSyncBridge.trigger(this), Toast.LENGTH_LONG).show()
-        }, ui.lp(this@MainActivity, 10))
+        cloud.addView(ui.action(this@MainActivity,"Upload pending images") {
+            com.azrael.pixivdumpsync.NduSettingsDialog.start(this)
+        },ui.lp(this@MainActivity,10))
+        cloud.addView(ui.action(this@MainActivity,"Include existing downloads") {
+            com.azrael.pixivdumpsync.NduSettingsDialog.start(this,true)
+        },ui.lp(this@MainActivity,10))
         panel.addView(cloud)
         section("Data portability")
         val files = ui.card(this@MainActivity)

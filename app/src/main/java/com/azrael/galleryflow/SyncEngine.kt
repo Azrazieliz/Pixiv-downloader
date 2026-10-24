@@ -34,8 +34,10 @@ class SyncEngine(private val context: Context) {
                 runLive(db, files, flow, stats, progress)
             }
             if (!SyncControl.isStopping() && stats.mediaDownloaded > 0 &&
-                RoundSyncBridge.enabled(context)) {
-                progress(RoundSyncBridge.trigger(context))
+                com.azrael.pixivdumpsync.NduSettings.configured(context)) {
+                runCatching {
+                    com.azrael.pixivdumpsync.NduUploadService.launch(context)
+                }.onFailure { progress("NDUS upload queued; open Cloud backup to retry") }
             }
             val label = if (stats.errors > 0 || stats.incompleteGalleries > 0)
                 "Backfill incomplete: ${stats.errors} errors, " +
@@ -255,6 +257,14 @@ class SyncEngine(private val context: Context) {
                     } else {
                         db.markMediaComplete(media, fresh)
                         stats.mediaDownloaded++
+                        if (com.azrael.pixivdumpsync.NduSettings.configured(context)) {
+                            runCatching {
+                                com.azrael.pixivdumpsync.NduCloudQueue(context).use {
+                                    it.enqueue("kyora",fresh.filename,
+                                        android.net.Uri.parse(fresh.contentUri))
+                                }
+                            }
+                        }
                         flow.mediaDownloaded(entity, meta, media, fresh)
                     }
                 } catch (e: HttpStatusException) {

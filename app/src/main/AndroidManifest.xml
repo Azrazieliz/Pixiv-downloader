@@ -25,6 +25,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service android:name=".NduCloudJobService"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <service android:name=".NduUploadService"
+            android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name="com.azrael.galleryflow.SyncForegroundService"
             android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name="com.azrael.galleryflow.SyncJobService"

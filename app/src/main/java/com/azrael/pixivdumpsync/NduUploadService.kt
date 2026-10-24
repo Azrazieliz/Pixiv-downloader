@@ -1,0 +1,97 @@
+package com.azrael.pixivdumpsync
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.net.Uri
+import android.os.IBinder
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+
+/** Foreground direct NDUS uploader. No Round Sync interaction. */
+class NduUploadService : Service() {
+    companion object {
+        private const val CHANNEL="nocturne_ndus_cloud"
+        private const val ID=193
+        const val ACTION_UPLOAD="com.azrael.nocturne.ndus.UPLOAD"
+        const val ACTION_STOP="com.azrael.nocturne.ndus.STOP"
+        const val ACTION_QUEUE_EXISTING="com.azrael.nocturne.ndus.QUEUE_EXISTING"
+        private val executor=Executors.newSingleThreadExecutor()
+        @Volatile private var running:Future<*>?=null
+        @Volatile private var stop=false
+        @Volatile var currentStatus:String="Idle"
+            private set
+        fun launch(context:android.content.Context, backfill:Boolean=false) {
+            if (!NduSettings.configured(context)) return
+            val i=Intent(context,NduUploadService::class.java)
+                .setAction(if(backfill) ACTION_QUEUE_EXISTING else ACTION_UPLOAD)
+            context.startForegroundService(i)
+        }
+    }
+    override fun onCreate() {
+        super.onCreate()
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL,"Nocturne TeraBox direct uploads",
+                NotificationManager.IMPORTANCE_LOW))
+    }
+    override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
+        if(intent?.action==ACTION_STOP) {
+            stop=true;currentStatus="Upload stopping";running?.cancel(true)
+            return START_NOT_STICKY
+        }
+        if(running?.isDone==false) return START_NOT_STICKY
+        stop=false
+        startForeground(ID,notification("Preparing direct TeraBox uploads"))
+        running=executor.submit {
+            try {
+                if(!NduSettings.configured(this)) return@submit
+                if(intent?.action==ACTION_QUEUE_EXISTING) {
+                    currentStatus="Scanning existing Pixiv and cosplay images"
+                    notifyNow()
+                    NduCloudQueue(this).use { it.enqueueExisting(this) }
+                }
+                val outcome=NduUploadEngine.drain(this,20000,12*60_000L,
+                    stop={stop || Thread.currentThread().isInterrupted}) { status ->
+                    currentStatus=status
+                    notifyNow()
+                }
+                if(outcome.connectionError!=null) {
+                    currentStatus="Direct upload: "+outcome.connectionError
+                    notifyNow()
+                }
+            } catch(t:Throwable) {
+                currentStatus="TeraBox connection failed: " +
+                    (t.message ?: t.javaClass.simpleName)
+                notifyNow()
+            } finally {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
+            }
+        }
+        return START_NOT_STICKY
+    }
+    private fun notification(text:String):Notification {
+        val open=PendingIntent.getActivity(this,0,
+            Intent(this,DownloaderHubActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val halt=PendingIntent.getService(this,1,
+            Intent(this,NduUploadService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return Notification.Builder(this,CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentTitle("Nocturne / TeraBox")
+            .setContentText(text.take(110))
+            .setContentIntent(open)
+            .setOngoing(true)
+            .addAction(Notification.Action.Builder(null,"Stop",halt).build())
+            .build()
+    }
+    private fun notifyNow() {
+        getSystemService(NotificationManager::class.java)
+            .notify(ID,notification(currentStatus))
+    }
+    override fun onBind(intent:Intent?):IBinder?=null
+}
