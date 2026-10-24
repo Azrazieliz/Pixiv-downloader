@@ -146,6 +146,12 @@ object FileStore {
                 null,
                 null
             )
+            // Upload from the already saved MediaStore URI; no redundant copy.
+            if (NduSettings.configured(context)) {
+                runCatching {
+                    NduCloudQueue(context).use { it.enqueue("kuroha",filename,uri) }
+                }
+            }
         } catch (t: Throwable) {
             resolver.delete(uri, null, null)
             throw t
