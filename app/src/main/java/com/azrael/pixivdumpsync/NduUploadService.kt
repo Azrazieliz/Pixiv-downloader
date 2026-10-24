@@ -48,44 +48,18 @@ class NduUploadService : Service() {
         running=executor.submit {
             try {
                 if(!NduSettings.configured(this)) return@submit
-                val cookie=NduSettings.cookie(this) ?: return@submit
-                NduCloudQueue(this).use { queue ->
-                    if(intent?.action==ACTION_QUEUE_EXISTING) {
-                        currentStatus="Scanning previously downloaded files"
-                        notifyNow()
-                        queue.enqueueExisting(this)
-                    }
-                    val pending=queue.nextBatch(250)
-                    if(pending.isEmpty()) {
-                        currentStatus="No pending images";notifyNow()
-                        return@use
-                    }
-                    currentStatus="Connecting to TeraBox";notifyNow()
-                    val client=NduTeraboxClient(cookie,NduSettings.domain(this))
-                    client.connect()
-                    var successes=0
-                    for((index,job) in pending.withIndex()) {
-                        if(stop || Thread.currentThread().isInterrupted) break
-                        try {
-                            currentStatus="Uploading "+(index+1)+"/"+pending.size+": "+job.name
-                            notifyNow()
-                            client.upload(this,Uri.parse(job.uri),job.name,
-                                NduSettings.destination(this,job.category),
-                                cancelled={stop || Thread.currentThread().isInterrupted}
-                            ) { done,total ->
-                                val percent=if(total>0) done*100/total else 0
-                                currentStatus="Uploading "+(index+1)+"/"+pending.size+": "+percent+"%"
-                                notifyNow()
-                            }
-                            queue.completed(job)
-                            successes++
-                        } catch(t:Throwable) {
-                            if(stop || Thread.currentThread().isInterrupted) break
-                            queue.failed(job,t.message ?: t.javaClass.simpleName)
-                        }
-                    }
-                    val summary=queue.status()
-                    currentStatus="Uploaded "+successes+"; "+summary.pending+" pending / retry"
+                if(intent?.action==ACTION_QUEUE_EXISTING) {
+                    currentStatus="Scanning existing Pixiv and cosplay images"
+                    notifyNow()
+                    NduCloudQueue(this).use { it.enqueueExisting(this) }
+                }
+                val outcome=NduUploadEngine.drain(this,20000,12*60_000L,
+                    stop={stop || Thread.currentThread().isInterrupted}) { status ->
+                    currentStatus=status
+                    notifyNow()
+                }
+                if(outcome.connectionError!=null) {
+                    currentStatus="Direct upload: "+outcome.connectionError
                     notifyNow()
                 }
             } catch(t:Throwable) {

@@ -20,6 +20,7 @@ import kotlin.math.min
 class NduTeraboxClient(private val ndus: String,
                       private val domain: String = "www.terabox.com") {
     private var jsToken = ""
+    private val createdFolders = hashSetOf<String>()
     private val base = "https://$domain"
     private val userAgent = "terabox;1.37.0.7;PC;PC-Windows;10.0.22631;WindowsTeraBox"
 
@@ -128,6 +129,7 @@ class NduTeraboxClient(private val ndus: String,
 
     fun createDirectory(path: String) {
         val verified=NduSettings.validateDirectory(path)
+        if (verified in createdFolders) return
         var dir=""
         for (segment in verified.split('/').drop(1)) {
             dir+="/$segment"
@@ -139,6 +141,7 @@ class NduTeraboxClient(private val ndus: String,
                 val check=request("/api/list","GET",mapOf("dir" to dir,"page" to "1","num" to "1"))
                 ok(check,"Check directory $dir")
             }
+            createdFolders.add(dir)
         }
     }
 

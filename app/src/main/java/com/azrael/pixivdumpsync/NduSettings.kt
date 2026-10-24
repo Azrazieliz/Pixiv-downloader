@@ -21,8 +21,10 @@ object NduSettings {
     private const val DOMAIN = "domain"
 
     fun enabled(ctx: Context) = ctx.getSharedPreferences(PREF,0).getBoolean(ENABLE,false)
-    fun setEnabled(ctx: Context, yes: Boolean) =
+    fun setEnabled(ctx: Context, yes: Boolean) {
         ctx.getSharedPreferences(PREF,0).edit().putBoolean(ENABLE,yes).apply()
+        NduCloudScheduler.configure(ctx,yes)
+    }
     fun domain(ctx: Context) = ctx.getSharedPreferences(PREF,0)
         .getString(DOMAIN,"www.terabox.com") ?: "www.terabox.com"
     fun setDomain(ctx: Context, host: String) {
@@ -99,6 +101,7 @@ object NduSettings {
         }.getOrNull()
     }
     fun clear(ctx: Context) {
+        NduCloudScheduler.configure(ctx,false)
         ctx.getSharedPreferences(PREF,0).edit().remove(SECRET)
             .putBoolean(ENABLE,false).apply()
     }

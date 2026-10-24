@@ -86,8 +86,28 @@ class NduCloudQueue(context: Context) :
                         includeKyora:Boolean=true):Int {
         var count=0
         if(includeKuroha) {
-            for(name in FileStore.listArtworkFiles(ctx)) {
-                FileStore.findUri(ctx,name)?.let { enqueue("kuroha",name,it);count++ }
+            // Stream MediaStore rows: do not allocate a 300k+ filename list.
+            val relative=android.os.Environment.DIRECTORY_DOWNLOADS + "/" +
+                ctx.getString(R.string.pixiv_download_folder) + "/"
+            val dirs=if(ctx.resources.getBoolean(R.bool.nocturne_preview))
+                listOf(relative) else listOf(relative,"Download/PixiFlow/")
+            val pattern=Regex("[0-9]+_p[0-9]+\\.(jpg|jpeg|png|gif|webp)")
+            for(dir in dirs) {
+                ctx.contentResolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    arrayOf(android.provider.BaseColumns._ID,
+                        MediaStore.MediaColumns.DISPLAY_NAME),
+                    MediaStore.MediaColumns.RELATIVE_PATH+"=?",
+                    arrayOf(dir),null)?.use { c ->
+                    while(c.moveToNext()) {
+                        val name=c.getString(1)
+                        if(name.matches(pattern)) {
+                            val uri=android.content.ContentUris.withAppendedId(
+                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,c.getLong(0))
+                            enqueue("kuroha",name,uri)
+                            count++
+                        }
+                    }
+                }
             }
         }
         if(includeKyora) GalleryDb(ctx).use { db ->

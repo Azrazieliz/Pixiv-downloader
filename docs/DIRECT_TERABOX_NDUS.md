@@ -39,7 +39,7 @@ NDUS is subject to expiration, regional restrictions, rate limits, temporary
 failures, and changes in unofficial web endpoints. Full reliability cannot be
 guaranteed without a real NDUS account to perform an authenticated upload test.
 
-Each upload service run processes up to 250 queued files; additional pending
-files can be uploaded in subsequent runs. No Round Sync task is needed.
+Foreground upload processes bounded batches for up to 12 minutes, while a persisted Android network-only job attempts queued/retry files approximately every 15 minutes; additional pending
+files resume in subsequent runs. Initial existing-file discovery streams MediaStore rows, avoiding enormous filename arrays. No Round Sync task is needed.
 Historical app data remains intact on an in-place APK upgrade where signing
 certificates match. GitHub debug build keys are not reliable for update-in-place.
