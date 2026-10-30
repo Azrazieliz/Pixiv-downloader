@@ -119,7 +119,17 @@ class AsterionHomeActivity:Activity(){
     }
     private fun renderAccounts(){
         section("Accounts & sites",
-            "Connect creators, sync new posts, or backfill their complete history.")
+            "Add a website or account. Save artists, sync new posts and backfill older content.")
+        val follow=card()
+        put(follow,text("Follow a site or artist",18f,theme.white,true),0)
+        put(follow,text("Pixiv artist, X account, cosplay creator, or image-gallery website",
+            12f,theme.secondary))
+        val siteInput=edit("Website, Pixiv artist, or X profile link")
+        put(follow,siteInput)
+        put(follow,theme.action(this,"ADD SOURCE & BACKFILL",true){
+            addAccountSource(siteInput.text.toString().trim())
+        })
+        put(body,follow,12)
         val tabs=theme.row(this)
         listOf("Pixiv","Cosplay","X").forEach { selected ->
             tabs.addView(theme.chip(this,
@@ -139,6 +149,61 @@ class AsterionHomeActivity:Activity(){
             else->AsterionAccountPanels.x(this,body){render()}
         }
     }
+    private fun addAccountSource(input:String){
+        val value=input.trim()
+        if(!WebDiscovery.isUrl(value)){
+            toast("Enter a full website or account URL")
+            return
+        }
+        when(SourceRouter.classify(value)){
+            DownloadKind.PIXIV->{
+                val id=SourceRouter.pixivArtistId(value)
+                if(id.isNullOrBlank()){toast("Enter a Pixiv artist profile, e.g. pixiv.net/users/123");return}
+                AppDb(this).use{it.addArtist(id)}
+                toast("Pixiv artist added; starting full archive")
+                val intent=Intent(this,SyncForegroundService::class.java).apply{
+                    action=SyncForegroundService.ACTION_START
+                    putExtra(SyncForegroundService.EXTRA_MODE,SyncMode.BACKFILL.name)
+                    putExtra(SyncForegroundService.EXTRA_TARGET_ARTIST_ID,id)
+                }
+                runCatching{startForegroundService(intent)}
+                    .onFailure{toast("Artist saved; sync could not start: ${it.message}")}
+                accountSection="Pixiv";render()
+            }
+            DownloadKind.X->{
+                val added=XPhotoQueue(this).use{it.addSource(value)}
+                if(added){XPhotoScheduler.ensure(this);XPhotoEngine.start(this)}
+                toast(if(added)"X artist followed; image backfill started" else
+                    "X account is already followed or its URL is invalid")
+                accountSection="X";render()
+            }
+            else->{
+                toast("Checking image website…")
+                Thread{
+                    val result=runCatching{
+                        val adapter=AdapterRegistry.forUrl(value)
+                        val entity=adapter.resolveEntity(value)
+                        GalleryDb(applicationContext).use{it.addEntity(entity)}
+                        entity.stableId
+                    }
+                    runOnUiThread{
+                        result.onSuccess{id->
+                            val service=Intent(this,
+                                com.azrael.galleryflow.SyncForegroundService::class.java).apply{
+                                action=com.azrael.galleryflow.SyncForegroundService.ACTION_START
+                                putExtra(com.azrael.galleryflow.SyncForegroundService.EXTRA_MODE,
+                                    com.azrael.galleryflow.SyncMode.BACKFILL.name)
+                                putExtra(com.azrael.galleryflow.SyncForegroundService.EXTRA_SITE_ID,id)
+                            }
+                            runCatching{startForegroundService(service)}
+                                .onFailure{toast("Site saved, sync launch failed: ${it.message}")}
+                            accountSection="Cosplay";render()
+                        }.onFailure{toast("Could not add image source: ${it.message}")}
+                    }
+                }.start()
+            }
+        }
+    }
     private fun renderAdd(){
         section("Video downloads","Paste a direct video URL or search for a title. Account syncing is under Accounts & sites.")
         val byLink=card()
@@ -156,6 +221,28 @@ class AsterionHomeActivity:Activity(){
             if(value.isNotBlank())input.setText(value) else toast("Clipboard is empty")
         })
         put(body,byLink,12)
+
+        val comics=card()
+        put(comics,text("Full manhwa → one ZIP",18f,theme.white,true),0)
+        put(comics,text("Paste a series link. Save every discovered chapter and image in chapter order. Individual chapter links also work.",
+            12f,theme.secondary))
+        val manhwa=edit("Paste a manhwa series or chapter URL")
+        put(comics,manhwa)
+        put(comics,theme.action(this,"DOWNLOAD ALL CHAPTERS AS ZIP",true){
+            val address=manhwa.text.toString().trim()
+            if(!WebDiscovery.isUrl(address)){
+                toast("Enter a valid manhwa series URL")
+            }else{
+                val added=ChapterQueue(this).use{
+                    it.enqueue(address,URI(address).path.trim('/').substringBefore('/')
+                        .ifBlank{"Manhwa series"})
+                }
+                if(added)ChapterArchives.start(this)
+                toast(if(added)"Full-series ZIP added to queue" else "This series is already saved")
+                page="Queue";render()
+            }
+        })
+        put(body,comics,12)
 
         val byName=card()
         put(byName,text("Search videos by name",18f,theme.white,true),0)
