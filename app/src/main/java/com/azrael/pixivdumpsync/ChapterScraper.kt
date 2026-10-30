@@ -3,76 +3,119 @@ package com.azrael.pixivdumpsync
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.net.URI
+import java.util.Locale
 
 data class ChapterLink(val url:String,val title:String)
+
+/** Chapter lists and readers: preserve chapter numbers, fractions and original page order. */
 object ChapterScraper {
-    private val number=Regex("(\\d+(?:\\.\\d+)?)")
-    private val chapter=Regex("(?i)(chapter|chapitre|episode|chap[-_ /]?[0-9]+)")
-    fun naturalKey(text:String):Double=number.find(text)
-        ?.value?.toDoubleOrNull()?:Double.MAX_VALUE
+    private val chapterNumber=Regex(
+        "(?i)(?:chapter|chapitre|episode|ch[.-]?|ep[.-]?)[\\s_/-]*(\\d+(?:[._]\\d+)?)"
+    )
+    private val pathChapter=Regex("(?i)/(?:chapter|chapitre|chap|ch|episode)[-_]?(\\d+(?:[._]\\d+)?)")
+    private fun numberFrom(text:String):Double? =
+        chapterNumber.find(text)?.groupValues?.get(1)?.replace('_','.')
+            ?.toDoubleOrNull()
+    fun naturalKey(text:String):Double=
+        numberFrom(text)?:pathChapter.find(text)?.groupValues?.get(1)
+            ?.replace('_','.')?.toDoubleOrNull()?:Double.MAX_VALUE
     fun sort(items:List<ChapterLink>):List<ChapterLink> =
-        items.distinctBy{it.url}.sortedWith(compareBy<ChapterLink>{naturalKey(it.title)}
-            .thenBy{it.title.lowercase()}.thenBy{it.url})
-    private fun read(url:String):Document=Jsoup.connect(url)
-        .userAgent("Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/131.0")
-        .timeout(30000).maxBodySize(4_000_000).followRedirects(true).get()
-    private fun allowed(raw:String):Boolean=runCatching {
-        val u=URI(raw)
-        val h=u.host.orEmpty().lowercase()
-        (u.scheme=="http"||u.scheme=="https")&&u.userInfo==null&&h.isNotEmpty()&&
-            h!="localhost"&&!h.endsWith(".local")&&!h.startsWith("127.")&&
-            !h.startsWith("10.")&&!h.startsWith("192.168.")
-    }.getOrDefault(false)
-    fun chapters(seriesUrl:String):List<ChapterLink> {
+        items.distinctBy{it.url.trimEnd('/')}.sortedWith(
+            compareBy<ChapterLink>{
+                val titleNumber=naturalKey(it.title)
+                if(titleNumber!=Double.MAX_VALUE)titleNumber else naturalKey(it.url)
+            }.thenBy{it.title.lowercase(Locale.ROOT)}.thenBy{it.url})
+    fun isSingleChapter(url:String):Boolean =
+        pathChapter.containsMatchIn(URI(url).path.orEmpty())
+    private fun read(url:String):Document{
+        val result=Jsoup.connect(url)
+            .userAgent("Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/131.0")
+            .timeout(30000).maxBodySize(12_000_000).followRedirects(true)
+            .ignoreHttpErrors(true).execute()
+        val doc=result.parse()
+        require(result.statusCode() in 200..299 &&
+            !doc.title().contains("Just a moment",true) &&
+            !doc.title().contains("Attention required",true) &&
+            !doc.text().contains("Enable JavaScript and cookies to continue",true)){
+            if(result.statusCode()==403 || doc.title().contains("Just a moment",true))
+                "This website requires a browser verification challenge; chapter images cannot be accessed yet (HTTP ${result.statusCode()})."
+            else "Series page returned HTTP ${result.statusCode()}"
+        }
+        return doc
+    }
+    private fun allowed(raw:String):Boolean=SearchRanking.validUrl(raw)
+    private fun clean(u:String):String=u.substringBefore('#').trimEnd('/')+"/"
+    private fun chapterTitle(anchor:org.jsoup.nodes.Element,url:String):String{
+        val label=anchor.text().trim().ifBlank{anchor.attr("title").trim()}
+        val num=numberFrom(label) ?: pathChapter.find(URI(url).path.orEmpty())
+            ?.groupValues?.get(1)?.replace('_','.')?.toDoubleOrNull()
+        return if(num!=null) "Chapter "+num.toString().removeSuffix(".0") else label.ifBlank{"Chapter"}
+    }
+    fun chapters(seriesUrl:String):List<ChapterLink>{
         require(allowed(seriesUrl)){"Provide an HTTP(S) chapter or series URL"}
+        if(isSingleChapter(seriesUrl))
+            return listOf(ChapterLink(seriesUrl,"Chapter "+
+                (pathChapter.find(URI(seriesUrl).path.orEmpty())
+                    ?.groupValues?.get(1)?.replace('_','.')?:"1")))
+        val base=URI(seriesUrl)
+        val prefix=base.path.orEmpty().trimEnd('/')+"/"
+        val root=base.host?.removePrefix("www.")
         val collected=linkedMapOf<String,ChapterLink>()
         var next:String?=seriesUrl
         val visited=mutableSetOf<String>()
-        while(next!=null) {
-            if(!visited.add(next))break
-            require(visited.size<=100){"Series index has over 100 pages; export not complete"}
+        while(next!=null){
+            if(!visited.add(clean(next)))break
+            require(visited.size<=150){"Over 150 index pages; cannot establish full chapter list"}
             val doc=read(next)
-            val root=URI(doc.location()).host?.removePrefix("www.")
             for(a in doc.select("a[href]")){
                 val link=runCatching{URI(doc.location()).resolve(a.attr("href")).toString()}
                     .getOrNull()?:continue
                 if(!allowed(link))continue
-                if(URI(link).host?.removePrefix("www.")!=root)continue
-                val label=a.text().trim().ifEmpty{a.attr("title")}
-                if(chapter.containsMatchIn(label)||chapter.containsMatchIn(URI(link).path)) {
-                    if(!label.contains("next",true)&&!label.contains("prev",true))
-                        collected.putIfAbsent(link.substringBefore('#'),
-                            ChapterLink(link.substringBefore('#'),label.ifBlank{"Chapter"}))
-                }
+                val uri=URI(link)
+                if(uri.host?.removePrefix("www.")!=root)continue
+                if(!uri.path.orEmpty().startsWith(prefix) ||
+                    !pathChapter.containsMatchIn(uri.path.orEmpty()))continue
+                val canonical=clean(link)
+                collected.putIfAbsent(canonical,
+                    ChapterLink(canonical,chapterTitle(a,link)))
             }
             val nextTag=doc.selectFirst(
-                ".pagination a.next[href], a.page-numbers.next[href], a[rel=next][href]")
+                ".pagination a.next[href], a.page-numbers.next[href], a[rel=next][href]"
+            )
             val found=nextTag?.let{
                 runCatching{URI(doc.location()).resolve(it.attr("href")).toString()}.getOrNull()
             }
-            next=found?.takeIf{allowed(it)&&URI(it).host?.removePrefix("www.")==root&&
-                it !in visited}
+            next=found?.takeIf{allowed(it)&&URI(it).host?.removePrefix("www.")==root &&
+                !visited.contains(clean(it))}
         }
-        return if(collected.isEmpty()) listOf(ChapterLink(seriesUrl,"Chapter 1"))
-            else sort(collected.values.toList())
+        require(collected.isNotEmpty()){
+            "No chapter links found on the series page; refusing to create an incomplete ZIP."
+        }
+        return sort(collected.values.toList())
     }
-    fun pageImages(chapterUrl:String):List<String> {
-        val doc=read(chapterUrl)
+    fun parsePageImages(doc:Document):List<String>{
         val nodes=doc.select(".reading-content img, .chapter-content img, #reader img, "+
             ".page-chapter img, .container-chapter-reader img, img.wp-manga-chapter-img, "+
-            "img[data-original], img[data-src]")
+            "img[data-original], img[data-src], img[data-lazy-src]")
         val fallback=if(nodes.isEmpty())doc.select("article img, main img")else nodes
         val urls=linkedSetOf<String>()
-        for(node in fallback) {
-            val raw=listOf("data-original","data-src","data-lazy-src","src")
-                .map{node.attr(it)}.firstOrNull{it.isNotBlank()&&!it.startsWith("data:")}
+        for(node in fallback){
+            val raw=listOf("data-original","data-src","data-lazy-src","data-full","src")
+                .map{node.attr(it)}.firstOrNull{
+                    it.isNotBlank() && !it.startsWith("data:") && !it.startsWith("blob:")
+                }?:node.attr("srcset").split(',').lastOrNull()?.trim()?.substringBefore(' ')
                 ?:continue
-            val u=runCatching{URI(doc.location()).resolve(raw.trim()).toString()}
+            val resolved=runCatching{URI(doc.location()).resolve(raw.trim()).toString()}
                 .getOrNull()?:continue
-            if(allowed(u)&&!Regex("(?i)(avatar|icon|emoji|logo|loading)").containsMatchIn(u))
-                urls.add(u)
+            if(allowed(resolved) &&
+                !Regex("(?i)(avatar|icon|emoji|logo|loading|spinner)").containsMatchIn(resolved))
+                urls.add(resolved)
         }
-        require(urls.isNotEmpty()){"No chapter images found at $chapterUrl"}
         return urls.toList()
+    }
+    fun pageImages(chapterUrl:String):List<String>{
+        val images=parsePageImages(read(chapterUrl))
+        require(images.isNotEmpty()){"No readable chapter images at $chapterUrl"}
+        return images
     }
 }
