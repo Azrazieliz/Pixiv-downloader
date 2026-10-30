@@ -26,7 +26,7 @@ object KeywordSources {
         if(configured!=null)return configured
         val legacy=endpoint(context)
         return if(legacy.isNotBlank()) "searxng|$legacy" else
-            "html|https://www.bing.com/videos/search?q={query}|Bing Videos\\n" +
+            "html|https://www.bing.com/videos/search?q={query}|Bing Videos\n" +
             "html|https://search.brave.com/search?q={query}|Brave Search"
     }
     fun setSources(context:Context,lines:String){
