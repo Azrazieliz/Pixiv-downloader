@@ -152,13 +152,16 @@ object VideoEngine {
         }
         if(!downloaded)throw (last?:IllegalStateException("No video extractor succeeded"))
         val file=parent.listFiles()?.filter { it.isFile && it.length()>0 &&
-            it.extension.lowercase() in setOf("mp4","mkv","webm","mov","ts") }
+            it.extension.lowercase() in setOf("mp4","mkv","webm","mov","ts","m4a","mp3","flac","opus") }
             ?.maxByOrNull { it.length() } ?: error("No completed playable video found")
+        val audioOnly=prefs.getString("quality","")=="bestaudio/best"
         val name=file.name.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"),"_").take(210)
         val values=ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME,name)
             put(MediaStore.Downloads.MIME_TYPE,when(file.extension.lowercase()){
-                "mp4"->"video/mp4";"webm"->"video/webm";"mkv"->"video/x-matroska"; else->"video/*"
+                "mp4"->"video/mp4";"webm"->if(audioOnly)"audio/webm" else "video/webm"
+                "mkv"->"video/x-matroska";"m4a"->"audio/mp4";"mp3"->"audio/mpeg"
+                "flac"->"audio/flac";"opus"->"audio/ogg";else->"video/*"
             })
             put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/VideoFlow/")
             put(MediaStore.Downloads.IS_PENDING,1)
