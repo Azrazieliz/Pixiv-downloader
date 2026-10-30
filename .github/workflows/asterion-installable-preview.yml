@@ -1,0 +1,50 @@
+name: Asterion Downloader Installable Preview
+
+on:
+  push:
+    branches:
+      - feature/asterion-unified-downloads-20261030
+    paths:
+      - '.github/workflows/asterion-installable-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build preview
+        run: gradle testPreviewUnitTest assemblePreview --stacktrace
+      - name: Validate APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/preview/app-preview.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          cp "$APK" Asterion-Downloader-v1.3.0-Preview.apk
+          sha256sum Asterion-Downloader-v1.3.0-Preview.apk > Asterion-Downloader-v1.3.0-Preview.sha256
+      - name: Publish prerelease for direct installation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create asterion-downloader-v1.3.0-preview-20261030 \
+            Asterion-Downloader-v1.3.0-Preview.apk \
+            Asterion-Downloader-v1.3.0-Preview.sha256 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Asterion Downloader v1.3.0 — Preview" \
+            --notes "Co-installable Android preview. Does NOT replace the original signed production app. Contains unified downloader and configured first-run search providers. Source branch pending phone verification." \
+            --prerelease
