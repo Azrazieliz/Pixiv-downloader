@@ -33,18 +33,18 @@ jobs:
           APK=app/build/outputs/apk/preview/app-preview.apk
           test -s "$APK"
           unzip -t "$APK" >/dev/null
-          cp "$APK" Asterion-Downloader-v1.3.6-Preview.apk
-          sha256sum Asterion-Downloader-v1.3.6-Preview.apk > Asterion-Downloader-v1.3.6-Preview.sha256
+          cp "$APK" Asterion-Downloader-v1.3.7-Preview.apk
+          sha256sum Asterion-Downloader-v1.3.7-Preview.apk > Asterion-Downloader-v1.3.7-Preview.sha256
       - name: Publish prerelease for direct installation
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create asterion-downloader-v1.3.6-preview-20261030 \
-            Asterion-Downloader-v1.3.6-Preview.apk \
-            Asterion-Downloader-v1.3.6-Preview.sha256 \
+          gh release create asterion-downloader-v1.3.7-preview-20261030 \
+            Asterion-Downloader-v1.3.7-Preview.apk \
+            Asterion-Downloader-v1.3.7-Preview.sha256 \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Asterion Downloader v1.3.6 — Preview" \
-            --notes "Co-installable Android preview. Does NOT replace the original signed production app. Accounts & Sites for Pixiv/cosplay/X creator bindings with sync/backfill; Video URLs with manhwa-series ZIP and relevant fast search results. Data preserved." \
+            --title "Asterion Downloader v1.3.7 — Preview" \
+            --notes "Co-installable Android preview. Does NOT replace the original signed production app. Four icon-source home: Pixiv artist sync, Toonily series ZIP, X photo sync, Add Site cosplay/gallery sync; video URL tools moved to secondary; preserves installed archive." \
             --prerelease
