@@ -27,7 +27,8 @@ class AsterionHomeActivity:Activity(){
     private lateinit var body:LinearLayout
     private lateinit var scroller:ScrollView
     private var page="Add"
-    private val pages=listOf("Add","Queue","Library","Sources","Settings")
+    private val pages=listOf("Add","Queue","Library","Settings")
+    private val navButtons=linkedMapOf<String,TextView>()
     private fun dp(v:Int)=theme.px(this,v)
     private fun text(v:String,size:Float=14f,tint:Int=theme.white,bold:Boolean=false)=
         theme.text(this,v,size,tint,bold)
@@ -57,8 +58,8 @@ class AsterionHomeActivity:Activity(){
         val head=theme.row(this).apply{setPadding(dp(14),dp(12),dp(14),dp(12))}
         head.addView(theme.brandMark(this,47),LinearLayout.LayoutParams(dp(47),dp(47)))
         val label=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(11),0,0,0)}
-        label.addView(text("ASTERION",19f,theme.white,true))
-        label.addView(text("DOWNLOADER  •  ALL MEDIA",10f,theme.secondary,true))
+        label.addView(text("ASTERION DOWNLOADER",19f,theme.white,true))
+        label.addView(text("Save images, videos and chapters",11f,theme.secondary))
         head.addView(label,LinearLayout.LayoutParams(0,-2,1f))
         root.addView(head)
         scroller=ScrollView(this).apply{isFillViewport=true}
@@ -70,11 +71,13 @@ class AsterionHomeActivity:Activity(){
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
         val tabs=theme.row(this).apply{setPadding(dp(5),dp(7),dp(5),dp(7));setBackgroundColor(theme.surface)}
         pages.forEach{tab->
-            val t=text(tab,12f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
+            val title=when(tab){"Add"->"Download";"Queue"->"Activity";"Library"->"Files";else->tab}
+            val t=text(title,13f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
                 gravity=Gravity.CENTER;minHeight=dp(50)
                 isClickable=true;isFocusable=true
                 setOnClickListener{page=tab;render();scroller.scrollTo(0,0)}
             }
+            navButtons[tab]=t
             tabs.addView(t,LinearLayout.LayoutParams(0,-2,1f))
         }
         root.addView(tabs)
@@ -86,6 +89,10 @@ class AsterionHomeActivity:Activity(){
     }
     override fun onResume(){super.onResume();if(::body.isInitialized)render()}
     private fun render(){
+        navButtons.forEach{(tab,view)->
+            view.setTextColor(if(tab==page)theme.primary else theme.secondary)
+            view.setTypeface(null,if(tab==page)android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        }
         body.removeAllViews()
         when(page){
             "Add"->renderAdd()
@@ -96,40 +103,77 @@ class AsterionHomeActivity:Activity(){
         }
     }
     private fun renderAdd(){
-        section("Download anything","One URL, automatic routing; videos, X posts, Pixiv, images and chapter archives.")
-        val c=card()
-        val input=edit("Paste video, X, Pixiv, gallery or series URL")
-        put(c,input,0)
-        put(c,theme.action(this,"ADD TO DOWNLOADS",true){
+        section("Save media","Paste a link or search for videos by name. Asterion chooses the downloader.")
+        val byLink=card()
+        put(byLink,text("1  Download from a link",18f,theme.white,true),0)
+        put(byLink,text("Videos · Pixiv · X images · Galleries · Full chapter ZIPs",
+            12f,theme.secondary))
+        val input=edit("Paste a link here")
+        val clip=getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        put(byLink,input)
+        put(byLink,theme.action(this,"DOWNLOAD LINK",true){
             submitInput(input.text.toString().trim())
         })
-        put(c,text("Recognized URL types are handled by their corresponding internal engine.",12f,theme.secondary))
-        put(body,c,16)
-        val names=card()
-        put(names,text("FOLLOW A NAME",15f,theme.white,true),0)
-        put(names,text("Discover public videos matching a title or creator. Add a specific site URL or a search URL with {name} to monitor that source.",12f,theme.secondary))
-        val query=edit("Person, creator, title or subject")
-        val source=edit("Optional source or search URL")
-        put(names,query)
-        put(names,source)
-        put(names,button("ADD AUTOMATIC SEARCH"){
-            val name=query.text.toString().trim()
-            val src=source.text.toString().trim()
-            if(name.length<2){toast("Enter a name");return@button}
-            if(src.isNotBlank()&&!WebDiscovery.isUrl(src.replace("{name}","test"))){
-                toast("Enter an HTTP(S) source URL");return@button
-            }
-            val ok=NameWatchDb(this).use{it.add(name,src)}
-            if(ok){toast("Name search saved");VideoEngine.launch(this,true)}
-            else toast("This name and source are already monitored")
-            page="Sources";render()
+        put(byLink,button("PASTE FROM CLIPBOARD"){
+            val value=clip.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+            if(value.isNotBlank())input.setText(value) else toast("Clipboard is empty")
         })
-        put(body,names,13)
-        val quick=card()
-        put(quick,text("DOWNLOAD OPTIONS",14f,theme.white,true),0)
-        put(quick,button("Run all pending videos"){VideoEngine.launch(this,false)})
-        put(quick,button("Resume pending chapter archives"){ChapterArchives.start(this)})
-        put(body,quick,13)
+        put(body,byLink,12)
+
+        val byName=card()
+        put(byName,text("2  Find videos by name",18f,theme.white,true),0)
+        put(byName,text("Search all saved sources. Review the matches and choose what to download.",
+            12f,theme.secondary))
+        val query=edit("Creator, title or keywords")
+        put(byName,query)
+        val follow=CheckBox(this).apply{
+            text="Keep checking for new videos"
+            setTextColor(theme.secondary)
+            isChecked=false
+        }
+        put(byName,follow)
+        put(byName,theme.action(this,"SEARCH VIDEOS",true){
+            val value=query.text.toString().trim()
+            if(value.isBlank()){toast("Enter a name or keywords");return@action}
+            if(follow.isChecked)NameWatchDb(this).use{it.add(value)}
+            toast("Searching your saved video sources…")
+            Thread {
+                val outcome=runCatching{KeywordSources.searchDetailed(applicationContext,value)}
+                outcome.onSuccess { result->
+                    SearchResultsDb(applicationContext).use{it.save(value,result.hits)}
+                    runOnUiThread{
+                        toast("${result.hits.size} results from ${result.checked} sources"+
+                            if(result.failures.isNotEmpty())" · ${result.failures.size} sources unavailable" else "")
+                        render()
+                    }
+                }.onFailure{error->
+                    runOnUiThread{toast("Search error: ${error.message}")}
+                }
+            }.start()
+        })
+        put(body,byName,12)
+
+        val hits=SearchResultsDb(this).use{it.list(40)}
+        if(hits.isNotEmpty()){
+            section("Search results","Results are source links, not confirmed downloads.")
+            for(hit in hits.take(25)){
+                val c=card()
+                put(c,text(hit.title,15f,theme.white,true),0)
+                put(c,text(hit.source+" · "+hit.query,12f,theme.secondary))
+                if(!hit.queued){
+                    put(c,button("DOWNLOAD THIS RESULT"){
+                        val added=VideoDb(this).use{it.addVideo(hit.url,hit.title)}
+                        if(added){
+                            SearchResultsDb(this).use{it.markQueued(hit.query,hit.url)}
+                            VideoEngine.launch(this,false)
+                        }
+                        toast(if(added)"Added to downloads" else "Already in downloads")
+                        page="Queue";render()
+                    })
+                }else put(c,text("Already added to downloads",12f,theme.primary))
+                put(body,c,8)
+            }
+        }
     }
     private fun submitInput(raw:String){
         val value=raw.trim()
@@ -185,7 +229,7 @@ class AsterionHomeActivity:Activity(){
         page="Queue";render()
     }
     private fun renderQueue(){
-        section("Transfer queue","Persistent history across supported sources.")
+        section("Downloads","Queued, downloading, completed and failed files in one place.")
         val videos=VideoDb(this).use{it.listVideos(200)}
         val comics=ChapterQueue(this).use{it.list()}
         val xphotos=XPhotoQueue(this).use{it.recent(100)}
@@ -197,12 +241,12 @@ class AsterionHomeActivity:Activity(){
             "${videos.count{it.status=="error"}+comics.count{it.state=="error"}+xphotos.count{it.state=="error"}} failed",
             14f,theme.primary,true))
         val actions=theme.row(this)
-        actions.addView(button("RESUME VIDEOS"){VideoEngine.launch(this,false)},
+        actions.addView(button("RETRY VIDEOS"){VideoEngine.launch(this,false)},
             LinearLayout.LayoutParams(0,-2,1f))
-        actions.addView(button("RESUME ZIP"){ChapterArchives.start(this)},
+        actions.addView(button("RETRY CHAPTERS"){ChapterArchives.start(this)},
             LinearLayout.LayoutParams(0,-2,1f).apply{leftMargin=dp(8)})
         put(body,actions)
-        put(body,button("RESUME X IMAGE DOWNLOADS"){XPhotoEngine.start(this)})
+        put(body,button("RETRY X IMAGES"){XPhotoEngine.start(this)})
         xphotos.take(35).forEach{photo->
             val c=card()
             put(c,text("X IMAGE · ${photo.state.uppercase()}",13f,theme.primary,true),0)
@@ -252,7 +296,7 @@ class AsterionHomeActivity:Activity(){
         })}.onFailure{toast("No app is available to open this file")}
     }
     private fun renderLibrary(){
-        section("Saved media","Files are retained in their original download folders.")
+        section("My files","Downloaded images, videos and chapter ZIPs.")
         val projection=arrayOf(MediaStore.Downloads._ID,MediaStore.Downloads.DISPLAY_NAME,
             MediaStore.Downloads.RELATIVE_PATH,MediaStore.Downloads.SIZE)
         runCatching{
@@ -333,10 +377,10 @@ class AsterionHomeActivity:Activity(){
         }
     }
     private fun renderSettings(){
-        section("Settings","Account, downloads, storage and cloud settings.")
+        section("Settings","Search sources, Tor connection and download quality.")
         val netPrefs=getSharedPreferences("video_options",MODE_PRIVATE)
         val tor=Switch(this).apply{
-            text="Use local SOCKS proxy for video transfers"
+            text="Use Orbot / Tor for hidden (.onion) sites"
             setTextColor(theme.white)
             isChecked=netPrefs.getBoolean("tor_proxy",false)
             setOnCheckedChangeListener{_,value->
@@ -363,6 +407,7 @@ class AsterionHomeActivity:Activity(){
                 else "Source settings: ${error.message}")
         })
         put(body,searchConfig)
+        put(body,button("MANAGE SAVED SEARCHES"){page="Sources";render()})
         val quality=card()
         put(quality,text("VIDEO QUALITY",14f,theme.white,true),0)
         val choices=listOf("Best MP4","Best available","1080p max","720p max","Audio only")
