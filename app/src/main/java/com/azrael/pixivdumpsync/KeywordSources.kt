@@ -5,6 +5,8 @@ import com.asterion.videoflow.WebDiscovery
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import java.net.URI
+import java.net.Proxy
+import java.net.InetSocketAddress
 import java.net.URLEncoder
 
 /** Federated keyword metadata search with evidence-bearing result URLs. */
@@ -21,8 +23,15 @@ object KeywordSources {
         require(WebDiscovery.isUrl(endpoint)){"Invalid search service URL"}
         val q=URLEncoder.encode(keyword.trim(),"UTF-8")
         val api="$endpoint/search?q=$q&categories=videos,general&format=json&safesearch=0"
-        val response=Jsoup.connect(api).ignoreContentType(true)
-            .timeout(30000).maxBodySize(4_000_000).execute()
+        val useProxy=context.getSharedPreferences("video_options",0)
+            .getBoolean("tor_proxy",false)
+        val hidden=URI(endpoint).host.orEmpty().endsWith(".onion")
+        require(!hidden||useProxy){"Enable a local proxy before using this endpoint"}
+        val call=Jsoup.connect(api).ignoreContentType(true)
+            .timeout(30000).maxBodySize(4_000_000)
+        if(useProxy)call.proxy(Proxy(Proxy.Type.SOCKS,
+            InetSocketAddress.createUnresolved("127.0.0.1",9050)))
+        val response=call.execute()
         require(response.statusCode() in 200..299){"Search provider unavailable"}
         val items=JSONObject(response.body()).optJSONArray("results")
             ?:error("Search provider did not return JSON results")
