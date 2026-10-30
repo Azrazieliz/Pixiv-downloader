@@ -84,7 +84,8 @@ object NameCrawler {
                             // Show low-confidence candidates in Results rather than
                             // automatically downloading unrelated search hits.
                             for(hit in hits.filter{it.score>0}.take(100)){
-                                if(videos.addVideo(hit.url,hit.title))
+                                if(!results.wasQueued(watch.name,hit.url) &&
+                                    videos.addVideo(hit.url,hit.title))
                                     results.markQueued(watch.name,hit.url)
                             }
                         }
