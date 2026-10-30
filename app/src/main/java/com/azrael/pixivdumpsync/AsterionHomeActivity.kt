@@ -323,6 +323,16 @@ class AsterionHomeActivity:Activity(){
         }
         put(body,tor)
         val prefs=getSharedPreferences("video_options",MODE_PRIVATE)
+        val searchConfig=card()
+        put(searchConfig,text("KEYWORD SEARCH INDEX",14f,theme.white,true),0)
+        val searchInput=edit("Search service URL")
+        searchInput.setText(KeywordSources.endpoint(this))
+        put(searchConfig,searchInput)
+        put(searchConfig,button("SAVE SOURCE"){
+            KeywordSources.setEndpoint(this,searchInput.text.toString())
+            toast("Search index saved")
+        })
+        put(body,searchConfig)
         val quality=card()
         put(quality,text("VIDEO QUALITY",14f,theme.white,true),0)
         val choices=listOf("Best MP4","Best available","1080p max","720p max","Audio only")
