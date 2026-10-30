@@ -250,7 +250,9 @@ class AsterionHomeActivity:Activity(){
         put(byName,text("Search videos by name",18f,theme.white,true),0)
         put(byName,text("Search all saved sources. Review the matches and choose what to download.",
             12f,theme.secondary))
+        val searchPrefs=getSharedPreferences("asterion_video_search",MODE_PRIVATE)
         val query=edit("Creator, title or keywords")
+        query.setText(searchPrefs.getString("last_query",""))
         put(byName,query)
         val follow=CheckBox(this).apply{
             text="Keep checking for new videos"
@@ -261,27 +263,40 @@ class AsterionHomeActivity:Activity(){
         put(byName,theme.action(this,"SEARCH VIDEOS",true){
             val value=query.text.toString().trim()
             if(value.isBlank()){toast("Enter a name or keywords");return@action}
+            searchPrefs.edit().putString("last_query",value)
+                .remove("last_error").apply()
             if(follow.isChecked)NameWatchDb(this).use{it.add(value)}
             toast("Searching your saved video sources…")
             Thread {
                 val outcome=runCatching{KeywordSources.searchDetailed(applicationContext,value)}
                 outcome.onSuccess { result->
                     SearchResultsDb(applicationContext).use{it.save(value,result.hits)}
+                    val failures=result.failures.take(5).joinToString(" | ")
+                    searchPrefs.edit().putString("last_error",failures).apply()
                     runOnUiThread{
-                        toast("${result.hits.size} results from ${result.checked} sources"+
-                            if(result.failures.isNotEmpty())" · ${result.failures.size} sources unavailable" else "")
+                        toast("${result.hits.size} matches from ${result.checked} sources")
                         render()
                     }
                 }.onFailure{error->
-                    runOnUiThread{toast("Search error: ${error.message}")}
+                    searchPrefs.edit().putString("last_error",error.message).apply()
+                    runOnUiThread{toast("Search error: ${error.message}");render()}
                 }
             }.start()
         })
         put(body,byName,12)
 
-        val hits=SearchResultsDb(this).use{it.list(40)}
-        if(hits.isNotEmpty()){
-            section("Search results","Results are source links, not confirmed downloads.")
+        val lastQuery=searchPrefs.getString("last_query","").orEmpty()
+        val hits=if(lastQuery.isBlank())emptyList() else
+            SearchResultsDb(this).use{it.listForQuery(lastQuery,60)}
+        val sourceErrors=searchPrefs.getString("last_error","").orEmpty()
+        if(lastQuery.isNotBlank()){
+            section("Results for: "+lastQuery,
+                "${hits.size} saved candidates · ranked by match. Results are not completed downloads.")
+            if(sourceErrors.isNotBlank())put(body,
+                text("Source errors: "+sourceErrors.take(350),12f,theme.danger))
+            if(hits.isEmpty())put(body,
+                text("No matching videos indexed yet. Check the source errors or search another name.",
+                    13f,theme.secondary))
             for(hit in hits.take(25)){
                 val c=card()
                 put(c,text(hit.title,15f,theme.white,true),0)
