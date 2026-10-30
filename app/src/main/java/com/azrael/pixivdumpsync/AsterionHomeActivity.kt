@@ -120,7 +120,7 @@ class AsterionHomeActivity:Activity(){
                 toast("Enter an HTTP(S) source URL");return@button
             }
             val ok=NameWatchDb(this).use{it.add(name,src)}
-            if(ok){toast("Name search saved");Thread{ NameCrawler.scan(applicationContext) }.start()}
+            if(ok){toast("Name search saved");VideoEngine.launch(this,true)}
             else toast("This name and source are already monitored")
             page="Sources";render()
         })
