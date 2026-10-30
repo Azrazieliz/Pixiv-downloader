@@ -1,0 +1,61 @@
+package com.azrael.pixivdumpsync
+
+import android.content.ContentValues
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+
+data class SavedSearchHit(val query:String,val title:String,val url:String,
+    val source:String,val score:Int,val queued:Boolean,val checkedAt:Long)
+
+/** Persistent search evidence. Discovery results are not misrepresented as saved files. */
+class SearchResultsDb(context:Context):
+    SQLiteOpenHelper(context,"asterion_search_results.sqlite",null,1) {
+    override fun onCreate(db:SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE results(
+            query TEXT NOT NULL, url_key TEXT NOT NULL,
+            url TEXT NOT NULL, title TEXT NOT NULL,
+            source TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0,
+            queued INTEGER NOT NULL DEFAULT 0, checked_at INTEGER NOT NULL,
+            PRIMARY KEY(query,url_key))""")
+        db.execSQL("CREATE INDEX search_recent ON results(checked_at DESC)")
+    }
+    override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int){}
+    fun save(query:String,hits:List<RankedHit>):Int {
+        val db=writableDatabase
+        var stored=0
+        db.beginTransaction()
+        try {
+            for(item in hits.take(300)){
+                val q=query.trim()
+                val key=SearchRanking.canonicalKey(item.url)
+                val row=ContentValues().apply {
+                    put("query",q);put("url_key",key);put("url",item.url)
+                    put("title",item.title);put("source",item.source)
+                    put("score",item.score);put("checked_at",System.currentTimeMillis())
+                }
+                val inserted=db.insertWithOnConflict("results",null,row,
+                    SQLiteDatabase.CONFLICT_IGNORE)
+                if(inserted!=-1L)stored++
+                else db.update("results",row,"query=? AND url_key=?",arrayOf(q,key))
+            }
+            db.setTransactionSuccessful()
+        }finally{db.endTransaction()}
+        return stored
+    }
+    fun markQueued(query:String,url:String) {
+        writableDatabase.update("results",ContentValues().apply{put("queued",1)},
+            "query=? AND url_key=?",arrayOf(query,SearchRanking.canonicalKey(url)))
+    }
+    fun list(limit:Int=100):List<SavedSearchHit> {
+        val records=ArrayList<SavedSearchHit>()
+        readableDatabase.rawQuery("""SELECT query,title,url,source,score,queued,checked_at
+            FROM results ORDER BY checked_at DESC,score DESC LIMIT ?""",
+            arrayOf(limit.coerceIn(1,300).toString())).use { c ->
+            while(c.moveToNext())records.add(SavedSearchHit(
+                c.getString(0),c.getString(1),c.getString(2),c.getString(3),
+                c.getInt(4),c.getInt(5)==1,c.getLong(6)))
+        }
+        return records
+    }
+}
