@@ -122,7 +122,7 @@ object AsterionAccountPanels {
         if(artists.isEmpty())add(a,p,ui.text(a,
             "No artists in this installation yet. Connect Pixiv or import existing artists.",
             13f,ui.secondary))
-        for(artist in artists.take(80)){
+        for(artist in artists.take(20)){
             val c=card(a,p)
             add(a,c,ui.text(a,artist.label?.takeIf{it.isNotBlank()}
                 ?: "Artist ${artist.userId}",16f,ui.white,true),0)
@@ -142,7 +142,7 @@ object AsterionAccountPanels {
                 {pixivSync(a,SyncMode.LIVE,artist.userId)},
                 {pixivSync(a,SyncMode.BACKFILL,artist.userId)})
         }
-        if(artists.size>80)action(a,p,"SHOW ALL ${artists.size} ARTISTS",false){
+        if(artists.size>20)action(a,p,"SHOW ALL ${artists.size} ARTISTS",false){
             a.startActivity(Intent(a,MainActivity::class.java))
         }
     }
@@ -204,7 +204,7 @@ object AsterionAccountPanels {
         add(a,p,ui.text(a,"Followed creators & websites",19f,ui.white,true),20)
         if(entities.isEmpty())add(a,p,
             ui.text(a,"No cosplay sources linked in this installation.",13f,ui.secondary))
-        for(entity in entities.take(80)){
+        for(entity in entities.take(25)){
             val c=card(a,p)
             add(a,c,ui.text(a,entity.displayName,16f,ui.white,true),0)
             add(a,c,ui.text(a,entity.canonicalUrl.take(110),12f,ui.secondary),4)
@@ -220,7 +220,7 @@ object AsterionAccountPanels {
                 {cosplaySync(a,GallerySyncMode.LIVE,entity.entityId)},
                 {cosplaySync(a,GallerySyncMode.BACKFILL,entity.entityId)})
         }
-        if(entities.size>80) action(a,p,"SHOW ALL ${entities.size} SOURCES",false){
+        if(entities.size>25) action(a,p,"SHOW ALL ${entities.size} SOURCES",false){
             a.startActivity(Intent(a,com.azrael.galleryflow.MainActivity::class.java))
         }
     }
@@ -260,7 +260,7 @@ object AsterionAccountPanels {
         if(accounts.isEmpty())add(a,p,ui.text(a,
             "Follow an account above to build a persistent artist archive.",
             13f,ui.secondary))
-        for(source in accounts.take(100)){
+        for(source in accounts.take(25)){
             val c=card(a,p)
             add(a,c,ui.text(a,"@"+source.handle,16f,ui.white,true),0)
             add(a,c,ui.text(a,if(source.cursor.isNullOrBlank())
