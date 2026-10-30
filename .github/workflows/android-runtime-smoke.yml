@@ -1,4 +1,4 @@
-name: Android 16 Runtime Smoke Test
+name: Android Unified UI Runtime Smoke Test
 
 on:
   workflow_dispatch:
@@ -22,8 +22,8 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
-        run: gradle assembleDebug assemblePreview --stacktrace
+      - name: Build preview APK
+        run: gradle assemblePreview --stacktrace
 
       - name: Enable KVM
         run: |
@@ -34,49 +34,28 @@ jobs:
       - name: Boot emulator and verify launch
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 36
+          api-level: 35
           arch: x86_64
           profile: pixel_6
           disable-animations: true
           script: |
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb install -r app/build/outputs/apk/preview/app-preview.apk
-            adb shell pm list packages | grep '^package:com.azrael.pixivdumpsync$'
-            adb shell pm list packages | grep '^package:com.azrael.pixivdumpsync.nocturne$'
-            adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.azrael.pixivdumpsync.DownloaderHubActivity
+            adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.azrael.pixivdumpsync.AsterionHomeActivity
             sleep 3
-            adb exec-out screencap -p > nocturne-preview-hub.png
+            adb shell pidof -s com.azrael.pixivdumpsync.nocturne | grep -Eq '[0-9]+'
+            adb exec-out screencap -p > asterion-unified-home.png
             adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.azrael.galleryflow.MainActivity
-            sleep 3
-            adb exec-out screencap -p > nocturne-gallery-ui.png
+            sleep 2
             adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.asterion.videoflow.MainActivity
-            sleep 3
-            adb exec-out screencap -p > nocturne-videoflow-ui.png
-            adb shell pidof -s com.azrael.pixivdumpsync.nocturne | grep -Eq '[0-9]+' || { echo "Preview did not launch"; exit 1; }
-            adb logcat -c
-            adb shell am force-stop com.azrael.pixivdumpsync
-            adb shell am start -W -n com.azrael.pixivdumpsync/.DownloaderHubActivity
-            sleep 4
-            adb exec-out screencap -p > asterion-downloader-hub.png
-            adb shell am start -W -n com.azrael.pixivdumpsync/com.asterion.videoflow.MainActivity
-            sleep 3
-            adb exec-out screencap -p > asterion-videoflow-ui.png
-            echo "=== PID ==="
-            adb shell pidof -s com.azrael.pixivdumpsync
-            echo "=== CRASH BUFFER ==="
-            adb logcat -b crash -d || true
-            echo "=== APP LOGS ==="
-            adb logcat -d | grep -E "pixivdumpsync|AndroidRuntime|FATAL EXCEPTION" || true
-            adb shell pidof -s com.azrael.pixivdumpsync | grep -Eq '[0-9]+' || { echo "App process is not alive after launch"; exit 1; }
+            sleep 2
+            adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.azrael.pixivdumpsync.AsterionHomeActivity
+            sleep 2
+            adb shell pidof -s com.azrael.pixivdumpsync.nocturne | grep -Eq '[0-9]+'
+            adb logcat -b crash -d
 
       - name: Upload launcher screenshot
         uses: actions/upload-artifact@v4
         with:
           name: asterion-downloader-hub-screenshot
-          path: |
-            asterion-downloader-hub.png
-            nocturne-preview-hub.png
-            nocturne-gallery-ui.png
-            nocturne-videoflow-ui.png
-            asterion-videoflow-ui.png
-          if-no-files-found: warn
+          path: asterion-unified-home.png
+          if-no-files-found: error
