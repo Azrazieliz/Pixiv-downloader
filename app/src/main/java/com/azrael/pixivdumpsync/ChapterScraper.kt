@@ -67,8 +67,9 @@ object ChapterScraper {
             if(!visited.add(clean(next)))break
             require(visited.size<=150){"Over 150 index pages; cannot establish full chapter list"}
             val doc=read(next)
-            for(a in doc.select("a[href]")){
-                val link=runCatching{URI(doc.location()).resolve(a.attr("href")).toString()}
+            for(a in doc.select("a[href], option[value]")){
+                val href=if(a.tagName()=="option")a.attr("value")else a.attr("href")
+                val link=runCatching{URI(doc.location()).resolve(href).toString()}
                     .getOrNull()?:continue
                 if(!allowed(link))continue
                 val uri=URI(link)
