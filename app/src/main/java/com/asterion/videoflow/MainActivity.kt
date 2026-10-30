@@ -162,7 +162,7 @@ class MainActivity:Activity() {
         hero.addView(gap(9))
         hero.addView(text("Paste a video link.\nSave it locally.",26f,white,true))
         hero.addView(gap(8))
-        hero.addView(text("No keyword search, no Tor. Paste the exact video page or media URL.",13f,grey))
+        hero.addView(text("Video page URLs are downloaded here. Keyword discovery and optional proxy settings are in Asterion.",13f,grey))
         add(content,hero)
         val box=card()
         box.addView(text("VIDEO URL",12f,primary,true))
