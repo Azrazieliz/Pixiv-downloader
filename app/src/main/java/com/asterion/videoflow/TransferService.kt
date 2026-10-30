@@ -123,7 +123,7 @@ object VideoEngine {
                 .addOption("-f",prefs.getString("quality","best[ext=mp4]/best")
                     ?: "best[ext=mp4]/best")
                 .apply {
-                    if(viaProxy)addOption("--proxy", "socks5h://127.0.0.1:${prefs.getInt("tor_port",9050)}")
+                    if(viaProxy && hidden)addOption("--proxy", "socks5h://127.0.0.1:${prefs.getInt("tor_port",9050)}")
                     if(!referer.isNullOrBlank())addOption("--referer",referer)
                     if(cookie.isFile&&cookie.length()>0)addOption("--cookies",cookie.absolutePath)
                 }
