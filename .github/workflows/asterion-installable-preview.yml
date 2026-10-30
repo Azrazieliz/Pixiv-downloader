@@ -33,18 +33,18 @@ jobs:
           APK=app/build/outputs/apk/preview/app-preview.apk
           test -s "$APK"
           unzip -t "$APK" >/dev/null
-          cp "$APK" Asterion-Downloader-v1.3.3-Preview.apk
-          sha256sum Asterion-Downloader-v1.3.3-Preview.apk > Asterion-Downloader-v1.3.3-Preview.sha256
+          cp "$APK" Asterion-Downloader-v1.3.4-Preview.apk
+          sha256sum Asterion-Downloader-v1.3.4-Preview.apk > Asterion-Downloader-v1.3.4-Preview.sha256
       - name: Publish prerelease for direct installation
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create asterion-downloader-v1.3.3-preview-20261030 \
-            Asterion-Downloader-v1.3.3-Preview.apk \
-            Asterion-Downloader-v1.3.3-Preview.sha256 \
+          gh release create asterion-downloader-v1.3.4-preview-20261030 \
+            Asterion-Downloader-v1.3.4-Preview.apk \
+            Asterion-Downloader-v1.3.4-Preview.sha256 \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Asterion Downloader v1.3.3 — Preview" \
-            --notes "Co-installable Android preview. Does NOT replace the original signed production app. Two-tab account/site sync and video-URL UI, archive/backfill engines and saved provider configuration. Original production app untouched." \
+            --title "Asterion Downloader v1.3.4 — Preview" \
+            --notes "Co-installable Android preview. Does NOT replace the original signed production app. Two primary tabs: Accounts & Sites (Pixiv, Cosplay, X sync and backfill) and Video URLs. Queue/files/settings remain accessible. Preserves installed artist archives and original production app." \
             --prerelease
