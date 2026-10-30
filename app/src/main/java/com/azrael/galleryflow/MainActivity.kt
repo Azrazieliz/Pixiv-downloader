@@ -102,7 +102,7 @@ class MainActivity : Activity() {
         words.addView(ui.text(this@MainActivity, "ASTERION", 17f, ui.white, true).apply {
             letterSpacing = .16f
         })
-        words.addView(ui.text(this@MainActivity, "KYORA / COSPLAY", 10f, ui.secondary, true).apply {
+        words.addView(ui.text(this@MainActivity, "IMAGES / GALLERIES", 10f, ui.secondary, true).apply {
             letterSpacing = .12f
         })
         head.addView(words, LinearLayout.LayoutParams(0, -2, 1f))

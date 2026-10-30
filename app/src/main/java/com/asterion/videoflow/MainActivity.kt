@@ -96,7 +96,7 @@ class MainActivity:Activity() {
         },LinearLayout.LayoutParams(dp(43),dp(43)))
         val appTitle=col().apply{setPadding(dp(10),0,0,0)}
         appTitle.addView(text("ASTERION DOWNLOADER",16f,white,true).apply{letterSpacing=0.04f})
-        appTitle.addView(text("VIDEOFLOW  /  VIDEO",10f,grey,true).apply{letterSpacing=0.08f})
+        appTitle.addView(text("VIDEOS / MEDIA",10f,grey,true).apply{letterSpacing=0.08f})
         top.addView(appTitle,LinearLayout.LayoutParams(0,-2,1f))
         top.addView(text("HUB",11f,primary,true).apply{
             gravity=Gravity.CENTER
