@@ -88,7 +88,20 @@ class VideoDb(context: Context): SQLiteOpenHelper(context, "videoflow.sqlite", n
     fun progress(id: Long, percent: Int) {
         writableDatabase.update("videos", ContentValues().apply { put("progress", percent.coerceIn(0,100)) }, "id=?", arrayOf("$id"))
     }
-    fun retry(id: Long) { update(id,"queued") }
+    fun retry(id: Long) {
+        update(id,"queued")
+        writableDatabase.execSQL("UPDATE videos SET attempts=0,retry_after=0 WHERE id=?",arrayOf(id))
+    }
+    fun scheduleRetry(id:Long,reason:String) {
+        val db=writableDatabase
+        val count=db.rawQuery("SELECT attempts FROM videos WHERE id=?",arrayOf(id.toString())).use{
+            if(it.moveToFirst())it.getInt(0)+1 else 1
+        }
+        val wait=(15000L shl (count-1).coerceIn(0,6)).coerceAtMost(900000L)
+        update(id,if(count<=6)"retry_wait" else "error",error=reason)
+        db.execSQL("UPDATE videos SET attempts=?,retry_after=? WHERE id=?",
+            arrayOf(count,System.currentTimeMillis()+wait,id))
+    }
     fun recover() {
         writableDatabase.execSQL("UPDATE videos SET state='queued', progress=0 WHERE state='running'")
     }
