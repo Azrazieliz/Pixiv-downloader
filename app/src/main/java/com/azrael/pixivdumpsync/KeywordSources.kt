@@ -33,7 +33,8 @@ object KeywordSources {
         SearchRanking.parseProviders(lines) // Reject invalid values before persistence.
         preferences(context).edit().putString("providers",lines.trim()).apply()
     }
-    private fun proxy(context:Context):Proxy? {
+    private fun proxy(context:Context,url:String):Proxy? {
+        if(!URI(url).host.orEmpty().endsWith(".onion",true))return null
         val settings=context.getSharedPreferences("video_options",Context.MODE_PRIVATE)
         if(!settings.getBoolean("tor_proxy",false))return null
         return Proxy(Proxy.Type.SOCKS,InetSocketAddress.createUnresolved(
@@ -42,7 +43,7 @@ object KeywordSources {
     private fun connection(context:Context,url:String):org.jsoup.Connection {
         require(SearchRanking.validUrl(url)){"Invalid search source address"}
         val host=URI(url).host.orEmpty().lowercase()
-        val route=proxy(context)
+        val route=proxy(context,url)
         require(!host.endsWith(".onion")||route!=null){
             "Enable a running local SOCKS5/Tor proxy for .onion search sources"
         }
