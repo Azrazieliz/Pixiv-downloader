@@ -53,6 +53,17 @@ class SearchResultsDb(context:Context):
         writableDatabase.update("results",ContentValues().apply{put("queued",1)},
             "query=? AND url_key=?",arrayOf(query,SearchRanking.canonicalKey(url)))
     }
+    fun listForQuery(query:String,limit:Int=100):List<SavedSearchHit> {
+        val records=ArrayList<SavedSearchHit>()
+        readableDatabase.rawQuery("""SELECT query,title,url,source,score,queued,checked_at
+            FROM results WHERE query=? ORDER BY score DESC, checked_at DESC LIMIT ?""",
+            arrayOf(query.trim(),limit.coerceIn(1,300).toString())).use{c->
+            while(c.moveToNext())records.add(SavedSearchHit(
+                c.getString(0),c.getString(1),c.getString(2),c.getString(3),
+                c.getInt(4),c.getInt(5)==1,c.getLong(6)))
+        }
+        return records
+    }
     fun list(limit:Int=100):List<SavedSearchHit> {
         val records=ArrayList<SavedSearchHit>()
         readableDatabase.rawQuery("""SELECT query,title,url,source,score,queued,checked_at
