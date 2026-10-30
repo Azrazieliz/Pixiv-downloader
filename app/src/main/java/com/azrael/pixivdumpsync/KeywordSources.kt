@@ -127,19 +127,44 @@ object KeywordSources {
     fun searchDetailed(context:Context,keyword:String):SearchOutcome {
         require(keyword.trim().isNotBlank()){"Enter a search term"}
         val providers=SearchRanking.parseProviders(sources(context))
+        if(providers.isEmpty())return SearchOutcome(emptyList(),0,
+            listOf("No search providers configured"))
+        val pool=java.util.concurrent.Executors.newFixedThreadPool(minOf(6,providers.size))
+        val completion=java.util.concurrent.ExecutorCompletionService<
+            Triple<String,List<RankedHit>,String?>>(pool)
         val collected=ArrayList<RankedHit>()
         val errors=ArrayList<String>()
-        for(provider in providers){
-            try {
-                val hits=when(provider.kind){
-                    SearchProviderKind.SEARXNG->index(context,provider,keyword.trim())
-                    SearchProviderKind.HTML->html(context,provider,keyword.trim())
+        try {
+            for(provider in providers)completion.submit(java.util.concurrent.Callable {
+                try {
+                    val hits=when(provider.kind){
+                        SearchProviderKind.SEARXNG->index(context,provider,keyword.trim())
+                        SearchProviderKind.HTML->html(context,provider,keyword.trim())
+                    }
+                    Triple(provider.label,hits,null)
+                }catch(t:Exception){
+                    Triple(provider.label,emptyList(),
+                        t.message?:t.javaClass.simpleName)
                 }
+            })
+            // Execute independent providers concurrently. A broken site cannot hold
+            // the whole search queue hostage.
+            val deadline=System.nanoTime()+
+                java.util.concurrent.TimeUnit.SECONDS.toNanos(35)
+            var finished=0
+            while(finished<providers.size){
+                val remaining=deadline-System.nanoTime()
+                if(remaining<=0L)break
+                val result=completion.poll(remaining,
+                    java.util.concurrent.TimeUnit.NANOSECONDS)?:break
+                val (label,hits,error)=result.get()
+                finished++
                 collected.addAll(hits)
-            }catch(t:Exception){
-                errors.add("${provider.label}: ${t.message?:t.javaClass.simpleName}")
+                if(error!=null)errors.add("$label: $error")
             }
-        }
+            if(finished<providers.size)
+                errors.add("${providers.size-finished} search source(s) timed out")
+        }finally{pool.shutdownNow()}
         return SearchOutcome(SearchRanking.deduplicate(keyword,collected),
             providers.size,errors)
     }
