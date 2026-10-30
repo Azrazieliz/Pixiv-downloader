@@ -54,15 +54,46 @@ object NameCrawler {
                 for(watch in watches.list().filter{it.enabled}){
                     try{
                         onStatus("Discovering videos: ${watch.name}")
-                        val hits=if(watch.source.isBlank()){
-                            val archive=runCatching{publicArchive(watch.name)}
-                                .getOrElse{onStatus("Archive search unavailable: ${it.message}");emptyList()}
-                            val indexed=runCatching{KeywordSources.search(context,watch.name)}
-                                .getOrElse{onStatus("Keyword index unavailable: ${it.message}");emptyList()}
-                            (archive+indexed).distinctBy{it.second}
-                        }else namedSource(watch.name,watch.source)
-                        for((title,url) in hits.take(100))videos.addVideo(url,title)
-                        watches.setResult(watch.id,null)
+                        val errors=ArrayList<String>()
+                        val found=ArrayList<RankedHit>()
+                        if(watch.source.isBlank()) {
+                            val archived=runCatching{publicArchive(watch.name)}
+                                .getOrElse{
+                                    errors.add("Internet Archive: ${it.message}")
+                                    emptyList()
+                                }
+                            found.addAll(archived.map{(title,url)->
+                                RankedHit(title,url,"Internet Archive")
+                            })
+                            val indexed=runCatching{
+                                KeywordSources.searchDetailed(context,watch.name)
+                            }.getOrElse{
+                                errors.add("Search configuration: ${it.message}")
+                                SearchOutcome(emptyList(),0,emptyList())
+                            }
+                            found.addAll(indexed.hits)
+                            errors.addAll(indexed.failures)
+                        }else {
+                            val matches=namedSource(watch.name,watch.source)
+                            found.addAll(matches.map{(title,url)->
+                                RankedHit(title,url,"Custom source")
+                            })
+                        }
+                        val hits=SearchRanking.deduplicate(watch.name,found)
+                        SearchResultsDb(context).use{results->
+                            results.save(watch.name,hits)
+                            // Show low-confidence candidates in Results rather than
+                            // automatically downloading unrelated search hits.
+                            for(hit in hits.filter{it.score>0}.take(100)){
+                                if(videos.addVideo(hit.url,hit.title))
+                                    results.markQueued(watch.name,hit.url)
+                            }
+                        }
+                        if(hits.isEmpty() && errors.isEmpty())
+                            errors.add("No matching video result was found by enabled sources")
+                        watches.setResult(watch.id,errors.take(5).joinToString(" | ")
+                            .takeIf{it.isNotEmpty()})
+                        onStatus("${watch.name}: ${hits.size} candidates, ${errors.size} source issues")
                     }catch(t:Exception){watches.setResult(watch.id,
                         t.message?:"Discovery failed")}
                 }
