@@ -180,6 +180,13 @@ object AsterionAccountPanels {
             17f,ui.white,true),0)
         val input=entry(a,"Creator / gallery URL")
         add(a,creator,input)
+        action(a,creator,"SIGN IN TO THIS WEBSITE",false){
+            val url=input.text.toString().trim()
+            if(com.azrael.galleryflow.SiteSession.validLoginUrl(url))
+                a.startActivity(Intent(a,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                    .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,url))
+            else say(a,"Enter a secure HTTPS website URL above")
+        }
         action(a,creator,"FOLLOW & SYNC",true){
             val url=input.text.toString().trim()
             if(!url.startsWith("https://")&&!url.startsWith("http://")){
@@ -208,6 +215,15 @@ object AsterionAccountPanels {
             val c=card(a,p)
             add(a,c,ui.text(a,entity.displayName,16f,ui.white,true),0)
             add(a,c,ui.text(a,entity.canonicalUrl.take(110),12f,ui.secondary),4)
+            if(com.azrael.galleryflow.SiteSession.cookie(entity.canonicalUrl)!=null)
+                add(a,c,ui.text(a,"Website session cookies available",12f,ui.primary),4)
+            action(a,c,"CONNECT / REFRESH SITE LOGIN",false){
+                val address=entity.canonicalUrl
+                if(com.azrael.galleryflow.SiteSession.validLoginUrl(address))
+                    a.startActivity(Intent(a,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                        .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,address))
+                else say(a,"Account connection requires HTTPS")
+            }
             if(!entity.lastError.isNullOrBlank())
                 add(a,c,ui.text(a,entity.lastError.take(150),12f,ui.danger),5)
             switch(a,c,"Include in sync",entity.selected){
