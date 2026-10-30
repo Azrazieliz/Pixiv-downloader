@@ -26,9 +26,8 @@ class AsterionHomeActivity:Activity(){
     private lateinit var root:LinearLayout
     private lateinit var body:LinearLayout
     private lateinit var scroller:ScrollView
-    private var page="Accounts"
-    private var accountSection="Pixiv"
-    private val pages=listOf("Accounts","Videos")
+    private var page="Home"
+    private val pages=listOf("Home","Queue","Library")
     private val navButtons=linkedMapOf<String,TextView>()
     private fun dp(v:Int)=theme.px(this,v)
     private fun text(v:String,size:Float=14f,tint:Int=theme.white,bold:Boolean=false)=
@@ -60,22 +59,18 @@ class AsterionHomeActivity:Activity(){
         head.addView(theme.brandMark(this,47),LinearLayout.LayoutParams(dp(47),dp(47)))
         val label=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(11),0,0,0)}
         label.addView(text("ASTERION DOWNLOADER",19f,theme.white,true))
-        label.addView(text("Save images, videos and chapters",11f,theme.secondary))
+        label.addView(text("Creator archives · Sync · Backfill",11f,theme.secondary))
         head.addView(label,LinearLayout.LayoutParams(0,-2,1f))
         root.addView(head)
-        val quick=theme.row(this).apply{
-            setPadding(dp(14),0,dp(14),dp(6))
+        val settings=text("SETTINGS",12f,theme.secondary,true).apply{
+            gravity=Gravity.CENTER
+            isClickable=true
+            isFocusable=true
+            contentDescription="Open settings"
+            setPadding(dp(12),dp(10),dp(12),dp(10))
+            setOnClickListener{open("Settings")}
         }
-        for((name,target) in listOf("Queue" to "Queue","Files" to "Library",
-            "Settings" to "Settings")){
-            quick.addView(text(name,12f,theme.secondary,true).apply{
-                gravity=Gravity.CENTER
-                isClickable=true
-                isFocusable=true
-                setOnClickListener{page=target;render();scroller.scrollTo(0,0)}
-            }, LinearLayout.LayoutParams(0,dp(38),1f))
-        }
-        root.addView(quick)
+        head.addView(settings)
         scroller=ScrollView(this).apply{isFillViewport=true}
         body=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL
@@ -85,11 +80,11 @@ class AsterionHomeActivity:Activity(){
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
         val tabs=theme.row(this).apply{setPadding(dp(5),dp(7),dp(5),dp(7));setBackgroundColor(theme.surface)}
         pages.forEach{tab->
-            val title=if(tab=="Accounts")"ACCOUNTS & SITES" else "VIDEO URLS"
+            val title=when(tab){"Home"->"SOURCES";"Queue"->"DOWNLOADS";else->"FILES"}
             val t=text(title,14f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
                 gravity=Gravity.CENTER;minHeight=dp(50)
                 isClickable=true;isFocusable=true
-                setOnClickListener{page=tab;render();scroller.scrollTo(0,0)}
+                setOnClickListener{open(tab)}
             }
             navButtons[tab]=t
             tabs.addView(t,LinearLayout.LayoutParams(0,-2,1f))
@@ -102,6 +97,14 @@ class AsterionHomeActivity:Activity(){
         render()
     }
     override fun onResume(){super.onResume();if(::body.isInitialized)render()}
+    @Suppress("DEPRECATION")
+    override fun onBackPressed(){
+        if(page!="Home")open("Home") else super.onBackPressed()
+    }
+    private fun open(target:String){
+        page=target
+        if(::body.isInitialized){render();scroller.scrollTo(0,0)}
+    }
     private fun render(){
         navButtons.forEach{(tab,view)->
             view.setTextColor(if(tab==page)theme.primary else theme.secondary)
@@ -109,44 +112,130 @@ class AsterionHomeActivity:Activity(){
         }
         body.removeAllViews()
         when(page){
-            "Accounts"->renderAccounts()
+            "Home"->renderHome()
+            "Pixiv"->AsterionAccountPanels.pixiv(this,body){render()}
+            "Toonily"->renderToonily()
+            "X"->AsterionAccountPanels.x(this,body){render()}
+            "Site"->AsterionAccountPanels.cosplay(this,body){render()}
             "Videos"->renderAdd()
             "Queue"->renderQueue()
             "Library"->renderLibrary()
             "Sources"->renderSources()
             else->renderSettings()
         }
-    }
-    private fun renderAccounts(){
-        section("Accounts & sites",
-            "Add a website or account. Save artists, sync new posts and backfill older content.")
-        val follow=card()
-        put(follow,text("Follow a site or artist",18f,theme.white,true),0)
-        put(follow,text("Pixiv artist, X account, cosplay creator, or image-gallery website",
-            12f,theme.secondary))
-        val siteInput=edit("Website, Pixiv artist, or X profile link")
-        put(follow,siteInput)
-        put(follow,theme.action(this,"ADD SOURCE & BACKFILL",true){
-            addAccountSource(siteInput.text.toString().trim())
-        })
-        put(body,follow,12)
-        val tabs=theme.row(this)
-        listOf("Pixiv","Cosplay","X").forEach { selected ->
-            tabs.addView(theme.chip(this,
-                if(selected=="X")"X / Photos" else selected,
-                selected==accountSection){
-                accountSection=selected
-                render()
-                scroller.scrollTo(0,0)
-            },LinearLayout.LayoutParams(0,-2,1f).apply {
-                leftMargin=if(selected=="Pixiv")0 else dp(7)
-            })
+        if(page!="Home"){
+            put(body,button("BACK TO SOURCE HOME"){open("Home")},24)
         }
-        put(body,tabs,13)
-        when(accountSection){
-            "Pixiv"->AsterionAccountPanels.pixiv(this,body){render()}
-            "Cosplay"->AsterionAccountPanels.cosplay(this,body){render()}
-            else->AsterionAccountPanels.x(this,body){render()}
+    }
+    private fun sourceTile(label:String,subtitle:String,icon:Int,tint:Int,
+                           target:String):LinearLayout=LinearLayout(this).apply{
+        orientation=LinearLayout.VERTICAL
+        gravity=Gravity.CENTER_HORIZONTAL
+        minimumHeight=dp(180)
+        setPadding(dp(13),dp(19),dp(13),dp(17))
+        background=theme.touch(this@AsterionHomeActivity,theme.surface,19)
+        isClickable=true
+        isFocusable=true
+        contentDescription="$label. $subtitle"
+        setOnClickListener{open(target)}
+        val symbol=ImageView(this@AsterionHomeActivity).apply{
+            setImageResource(icon)
+            imageTintList=android.content.res.ColorStateList.valueOf(tint)
+            scaleType=ImageView.ScaleType.FIT_CENTER
+            setPadding(dp(11),dp(11),dp(11),dp(11))
+            background=theme.shape(this@AsterionHomeActivity,theme.raised,18)
+            contentDescription="$label icon"
+        }
+        addView(symbol,LinearLayout.LayoutParams(dp(68),dp(68)))
+        addView(text(label,16f,theme.white,true).apply{
+            gravity=Gravity.CENTER
+            setPadding(0,dp(10),0,0)
+            maxLines=2
+        },LinearLayout.LayoutParams(-1,-2))
+        addView(text(subtitle,11f,theme.secondary).apply{
+            gravity=Gravity.CENTER
+            setPadding(0,dp(6),0,0)
+            maxLines=3
+        },LinearLayout.LayoutParams(-1,-2))
+    }
+    private fun tileRow(left:View,right:View){
+        val row=theme.row(this)
+        row.gravity=Gravity.TOP
+        row.addView(left,LinearLayout.LayoutParams(0,-2,1f))
+        row.addView(right,LinearLayout.LayoutParams(0,-2,1f).apply{leftMargin=dp(11)})
+        put(body,row,12)
+    }
+    private fun renderHome(){
+        section("Choose a source","Connect accounts and websites, synchronize new posts or backfill older content.")
+        tileRow(
+            sourceTile("Pixiv","Artists · Account sync · Backfill",
+                R.drawable.ic_source_pixiv,android.graphics.Color.rgb(65,161,255),"Pixiv"),
+            sourceTile("Toonily","Manhwa series · Complete ZIP",
+                R.drawable.ic_source_toonily,theme.violet,"Toonily")
+        )
+        tileRow(
+            sourceTile("X","Follow accounts · Photo sync · Backfill",
+                R.drawable.ic_source_x,theme.white,"X"),
+            sourceTile("Add Site","Cosplay & galleries · Sync · Backfill",
+                R.drawable.ic_source_site,theme.primary,"Site")
+        )
+        val counts=card()
+        val pixivCount=AppDb(this).use{it.listArtists().size}
+        val siteCount=GalleryDb(this).use{it.listEntities().size}
+        val xCount=XPhotoQueue(this).use{it.allSources().size}
+        put(counts,text("YOUR ARCHIVE",12f,theme.secondary,true),0)
+        put(counts,text("$pixivCount Pixiv artists  ·  $siteCount sites  ·  $xCount X accounts",
+            14f,theme.white,true),5)
+        put(body,counts,18)
+        val tools=card()
+        put(tools,text("Other download tools",15f,theme.white,true),0)
+        put(tools,text("Video links, keyword searches and optional external sources.",
+            12f,theme.secondary))
+        put(tools,button("VIDEO URL DOWNLOADS & SEARCH"){open("Videos")})
+        put(body,tools,16)
+    }
+    private fun renderToonily(){
+        section("Toonily · Manhwa to ZIP",
+            "Download every accessible chapter and image as one archive in reading order.")
+        val inputCard=card()
+        put(inputCard,text("Full series download",18f,theme.white,true),0)
+        put(inputCard,text("Paste a Toonily series link or supported manhwa website. All discovered chapters are archived in ascending order, including fractional chapters.",
+            12f,theme.secondary))
+        val input=edit("https://toonily.com/serie/...")
+        put(inputCard,input)
+        put(inputCard,theme.action(this,"SAVE ALL CHAPTERS AS ZIP",true){
+            val url=input.text.toString().trim()
+            if(!WebDiscovery.isUrl(url)){toast("Enter a valid series or chapter URL");return@action}
+            val slug=runCatching{
+                val pieces=URI(url).path.trim('/').split('/')
+                if(pieces.firstOrNull() in listOf("serie","series","manga","manhwa"))
+                    pieces.getOrNull(1) else pieces.lastOrNull()
+            }.getOrNull().orEmpty().ifBlank{"Manhwa series"}
+            val added=ChapterQueue(this).use{it.enqueue(url,slug)}
+            if(added)ChapterArchives.start(this)
+            toast(if(added)"Series ZIP queued" else "Series is already in downloads")
+            render()
+        })
+        put(body,inputCard,12)
+        section("Series downloads","Progress and site-specific access errors are shown here.")
+        val jobs=ChapterQueue(this).use{it.list().take(25)}
+        if(jobs.isEmpty())put(body,text("No manhwa series queued yet.",13f,theme.secondary),10)
+        for(job in jobs){
+            val c=card()
+            put(c,text(job.title,16f,theme.white,true),0)
+            put(c,text(job.state.uppercase()+" · "+job.progress+"% · "+
+                job.attempts+" attempt(s)",12f,theme.secondary))
+            if(!job.error.isNullOrBlank())
+                put(c,text(job.error.take(330),12f,theme.danger))
+            if(job.state=="error")put(c,button("RETRY ZIP"){
+                ChapterQueue(this).use{it.retry(job.id)}
+                ChapterArchives.start(this)
+                render()
+            })
+            if(job.state=="done" && !job.savedUri.isNullOrBlank())
+                put(c,text("ZIP saved to Downloads / AsterionDownloader / Comics",
+                    12f,theme.primary))
+            put(body,c,10)
         }
     }
     private fun addAccountSource(input:String){
@@ -205,7 +294,7 @@ class AsterionHomeActivity:Activity(){
         }
     }
     private fun renderAdd(){
-        section("Video downloads","Paste a direct video URL or search for a title. Account syncing is under Accounts & sites.")
+        section("Video tools","Secondary tools for individual video URLs and keyword searches.")
         val byLink=card()
         put(byLink,text("Download a video URL",18f,theme.white,true),0)
         put(byLink,text("Video sites and direct files. Other supported links are routed automatically.",
@@ -221,30 +310,6 @@ class AsterionHomeActivity:Activity(){
             if(value.isNotBlank())input.setText(value) else toast("Clipboard is empty")
         })
         put(body,byLink,12)
-
-        val comics=card()
-        put(comics,text("Full manhwa → one ZIP",18f,theme.white,true),0)
-        put(comics,text("Paste a series link. Save every discovered chapter and image in chapter order. Individual chapter links also work.",
-            12f,theme.secondary))
-        val manhwa=edit("Paste a manhwa series or chapter URL")
-        put(comics,manhwa)
-        put(comics,theme.action(this,"DOWNLOAD ALL CHAPTERS AS ZIP",true){
-            val address=manhwa.text.toString().trim()
-            if(!WebDiscovery.isUrl(address)){
-                toast("Enter a valid manhwa series URL")
-            }else{
-                val added=ChapterQueue(this).use{
-                    it.enqueue(address,URI(address).path.trim('/').split('/').let{segments->
-                        if(segments.firstOrNull() in listOf("serie","series","manga","manhwa"))
-                            segments.getOrNull(1) else segments.lastOrNull()
-                    }.orEmpty().ifBlank{"Manhwa series"})
-                }
-                if(added)ChapterArchives.start(this)
-                toast(if(added)"Full-series ZIP added to queue" else "This series is already saved")
-                page="Queue";render()
-            }
-        })
-        put(body,comics,12)
 
         val byName=card()
         put(byName,text("Search videos by name",18f,theme.white,true),0)
@@ -309,7 +374,7 @@ class AsterionHomeActivity:Activity(){
                             VideoEngine.launch(this,false)
                         }
                         toast(if(added)"Added to downloads" else "Already in downloads")
-                        page="Queue";render()
+                        open("Queue")
                     })
                 }else put(c,text("Already added to downloads",12f,theme.primary))
                 put(body,c,8)
