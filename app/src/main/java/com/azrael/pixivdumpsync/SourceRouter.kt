@@ -15,7 +15,7 @@ object SourceRouter {
            host=="pximg.net"||host.endsWith(".pximg.net"))return DownloadKind.PIXIV
         if(host=="x.com"||host=="twitter.com"||host=="mobile.twitter.com"||
            host=="fxtwitter.com"||host=="vxtwitter.com")return DownloadKind.X
-        if(Regex("(?i)(/manga/|/manhwa/|/series/|/chapter[-/]|/chapitre[-/])")
+        if(Regex("(?i)(/manga/|/manhwa/|/series/|/serie/|/chapter[-/]|/chapitre[-/])")
             .containsMatchIn(path))return DownloadKind.COMIC
         if(Regex("(?i)\\.(mp4|webm|m3u8|mpd|mov)([?#]|$)").containsMatchIn(raw)||
            Regex("(?i)(/watch|/video|/shorts/|/reel/|/clip/|/post/)")
