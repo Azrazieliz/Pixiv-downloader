@@ -138,3 +138,40 @@
 - Still necessary: site-specific scraping validation, Tor hidden-site
   downloads, comprehensive queue persistence tests, provider search
   relevance, screenshot/UI QA when the PC permits.
+
+
+## Source-icon launcher and authenticated Add Site — 2026-10-31
+
+- Home is NOT URL-first. The launcher contains four dedicated, vector-icon
+  destinations: Pixiv, Toonily (manhwa to chapter ZIP), X (photo artist
+  tracking), and Add Site (cosplay, galleries, creator/site binding). Video URL
+  and keyword search are secondary. Queue/files and settings remain available.
+- Pixiv keeps the existing account session, following feed, artist selection,
+  per-artist live sync/backfill, scheduled checks and original Kuroha manager.
+  The preview was migrated from the original device database: 1,304 artists,
+  5,581 works, 90,576 pages, SQLite integrity=ok. Never clear app-private data.
+- Toonily uses the existing ChapterScraper/ChapterArchives production code:
+  chapter link discovery, numeric and fractional sorting, lazy image URLs,
+  resumable per-page cache, a single ordered ZIP, MediaStore publication only
+  after copy verification. A live *metadata/markup-only* probe of the user's
+  Toonily Moby Dick reference returned HTTP 200, 115 unique chapter URLs and
+  20 img tags in chapter 1; no full end-to-end ZIP was produced by that probe.
+- X retains named photo sources, cursors, deduplication, background checks,
+  per-artist sync/backfill. X photo mode intentionally excludes videos.
+- Add Site retains creator/gallery URL tracking, sync and backfill. A private
+  SiteLoginActivity now allows per-domain HTTPS WebView account login.
+  It keeps credentials and session cookies in Android WebView storage. The
+  existing gallery HttpClient now attaches WebView cookies to the matching
+  gallery/page/media requests. Cookie presence alone is not proof that the
+  remote server has authenticated or that dynamic pages are supported.
+- The original 0.6.1 Android package remains untouched. The connected PC is
+  online but Android ADB reports zero devices at the latest check; no claim of
+  live installation or authenticated site login test for this newer build.
+- Build/release train: v1.3.8 preview; incremental update must use the same
+  preview signing certificate as previously installed preview rather than
+  the CI's ephemeral key. Never uninstall original or preview to upgrade.
+- Still required: real app screenshot QA and Android runtime tests; verify a
+  complete Toonily ZIP against live access; verify gallery login on an actual
+  supported authenticated website; validate X account backfill, provider
+  searches, retry behavior and cloud export. Browser challenges/DRM are not
+  bypassed.
