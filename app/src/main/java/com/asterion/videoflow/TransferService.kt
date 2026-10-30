@@ -145,7 +145,7 @@ object VideoEngine {
                 downloaded=true
                 break
             } catch(t:Exception) {last=t}
-            val media=if(hidden)null else runCatching{WebDiscovery.directMedia(candidate)}.getOrNull()
+            val media=if(viaProxy)null else runCatching{WebDiscovery.directMedia(candidate)}.getOrNull()
             if(!media.isNullOrBlank()&&media!=candidate) {
                 try {
                     execute(media,candidate)
