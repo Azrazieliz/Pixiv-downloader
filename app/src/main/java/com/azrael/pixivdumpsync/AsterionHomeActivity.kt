@@ -309,6 +309,28 @@ class AsterionHomeActivity:Activity(){
             }
         }
         put(body,button("SCAN ENABLED SOURCES"){VideoEngine.launch(this,true)})
+        val discoveries=SearchResultsDb(this).use{it.list(60)}
+        if(discoveries.isNotEmpty()){
+            put(body,text("SEARCH RESULTS",17f,theme.white,true),21)
+            put(body,text("Candidates include original source URLs. A result is not a completed download.",12f,theme.secondary))
+            for(hit in discoveries){
+                val c=card()
+                put(c,text(hit.title,14f,theme.white,true),0)
+                put(c,text("${hit.source} · ${hit.query} · relevance ${hit.score}",
+                    11f,theme.secondary))
+                put(c,text(hit.url,11f,theme.subdued))
+                if(!hit.queued)put(c,button("QUEUE THIS VIDEO"){
+                    val added=VideoDb(this).use{it.addVideo(hit.url,hit.title)}
+                    if(added){
+                        SearchResultsDb(this).use{it.markQueued(hit.query,hit.url)}
+                        VideoEngine.launch(this,false)
+                    }
+                    toast(if(added)"Video queued" else "Already in video download history")
+                    render()
+                })
+                put(body,c,9)
+            }
+        }
     }
     private fun renderSettings(){
         section("Settings","Account, downloads, storage and cloud settings.")
@@ -324,13 +346,21 @@ class AsterionHomeActivity:Activity(){
         put(body,tor)
         val prefs=getSharedPreferences("video_options",MODE_PRIVATE)
         val searchConfig=card()
-        put(searchConfig,text("KEYWORD SEARCH INDEX",14f,theme.white,true),0)
-        val searchInput=edit("Search service URL")
-        searchInput.setText(KeywordSources.endpoint(this))
+        put(searchConfig,text("SEARCH PROVIDERS",14f,theme.white,true),0)
+        put(searchConfig,text("One per line: searxng|https://your-index.example or html|https://website.example/search?q={query}. Adult and alternative sites are eligible. A local SOCKS proxy is needed for .onion endpoints.",12f,theme.secondary))
+        val searchInput=edit("searxng|https://index.example")
+        searchInput.setSingleLine(false)
+        searchInput.minLines=4
+        searchInput.maxLines=8
+        searchInput.gravity=Gravity.TOP
+        searchInput.setText(KeywordSources.sources(this))
         put(searchConfig,searchInput)
-        put(searchConfig,button("SAVE SOURCE"){
-            KeywordSources.setEndpoint(this,searchInput.text.toString())
-            toast("Search index saved")
+        put(searchConfig,button("SAVE SEARCH PROVIDERS"){
+            val error=runCatching{
+                KeywordSources.setSources(this,searchInput.text.toString())
+            }.exceptionOrNull()
+            toast(if(error==null)"Search providers saved"
+                else "Source settings: ${error.message}")
         })
         put(body,searchConfig)
         val quality=card()
