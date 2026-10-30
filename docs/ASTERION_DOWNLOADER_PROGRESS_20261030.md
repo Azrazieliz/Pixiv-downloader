@@ -55,3 +55,47 @@
 - The existing Pixiv, photo-only X, chapter ZIP, video, signing and data
   preservation contracts remain in force. Confirm live operation and original
   certificate update separately from Android CI.
+
+
+## Android on-device installation and saved configuration — 2026-10-30
+
+- CI run `41139595378` succeeded and published the direct-download preview:
+  `https://github.com/Azrazieliz/Pixiv-downloader/releases/tag/asterion-downloader-v1.3.0-preview-20261030`.
+  CI artifact SHA-256:
+  `d5c1b5262dd908e5093f607bde466d0449c9e0f22ffb1381c6a93f83c49841bf`.
+- Installed on the connected Android 17 phone via ADB:
+  `com.azrael.pixivdumpsync.nocturne`, versionCode 29,
+  versionName `1.3.0-preview`. Verified launcher activity
+  `com.azrael.pixivdumpsync.AsterionHomeActivity` opened successfully.
+- Preserved existing production package `com.azrael.pixivdumpsync`,
+  versionCode 15, versionName `0.6.1`. No uninstall, data clear or
+  production signing replacement.
+- For repeatable in-place preview updates the released APK was re-signed
+  with the PC's existing Android debug keystore before ADB installation.
+  Installed preview signing certificate SHA-256:
+  `9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad`.
+  Future preview builds need the SAME key to install over this package without
+  removing app-private preferences. The publicly published CI APK was
+  signed by a different CI debug key and is not directly upgrade-compatible.
+  Do not commit or expose the PC's private signing key.
+- Saved persistent `asterion_keyword_sources.xml` SharedPreferences for the
+  installed preview (without navigating or editing the user's other apps):
+  - `html|https://search.brave.com/search?q={query}&safesearch=off|Brave Search`
+  - `html|https://www.pornhub.com/video/search?search={query}|Pornhub`
+  - `html|https://www.xvideos.com/?k={query}|XVideos`
+  - `html|https://xhamster.com/search/{query}|xHamster`
+  - `html|https://www.bing.com/videos/search?q={query}&adlt=off|Bing Videos`
+  Verified that the XML exists in the preview app's own sandbox.
+  Desktop HTTP reachability was checked; this is NOT proof of working
+  Android-side scraping, source availability or successful media downloads.
+- Installed official `org.torproject.android` Orbot v17.9.7-RC-1
+  (arm64) from Guardian Project GitHub releases. Verified downloaded APK
+  SHA-256 `97d3a0a5181394e99fbabdda9fefb73027657cac4c7400c64ebf146a7778860b`.
+  The local SOCKS listener appeared on port 9050 but Tor connections did
+  NOT pass the external `check.torproject.org/api/ip` check (timeouts).
+  Orbot was stopped after testing; `tor_proxy` remains disabled so ordinary
+  Asterion search remains usable. Do not claim .onion access works yet.
+- Remaining gates: validate actual provider result parsing and downloads
+  on device, verify the Toonily chapter ZIP, X photos, post-reboot persistence,
+  actual SOCKS/Tor connection, provider error reporting and safe incremental
+  upgrades. PR #17 remains separate from production until verified.
