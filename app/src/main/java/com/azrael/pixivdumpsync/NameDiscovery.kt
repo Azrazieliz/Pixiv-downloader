@@ -54,8 +54,13 @@ object NameCrawler {
                 for(watch in watches.list().filter{it.enabled}){
                     try{
                         onStatus("Discovering videos: ${watch.name}")
-                        val hits=if(watch.source.isBlank())publicArchive(watch.name)
-                            else namedSource(watch.name,watch.source)
+                        val hits=if(watch.source.isBlank()){
+                            val archive=runCatching{publicArchive(watch.name)}
+                                .getOrElse{onStatus("Archive search unavailable: ${it.message}");emptyList()}
+                            val indexed=runCatching{KeywordSources.search(context,watch.name)}
+                                .getOrElse{onStatus("Keyword index unavailable: ${it.message}");emptyList()}
+                            (archive+indexed).distinctBy{it.second}
+                        }else namedSource(watch.name,watch.source)
                         for((title,url) in hits.take(100))videos.addVideo(url,title)
                         watches.setResult(watch.id,null)
                     }catch(t:Exception){watches.setResult(watch.id,
