@@ -175,3 +175,25 @@
   supported authenticated website; validate X account backfill, provider
   searches, retry behavior and cloud export. Browser challenges/DRM are not
   bypassed.
+
+
+### v1.3.8 build and signing proof
+
+- GitHub v1.3.8 preview release was published and tested by Android CI:
+  https://github.com/Azrazieliz/Pixiv-downloader/releases/tag/asterion-downloader-v1.3.8-preview-20261030
+- CI APK SHA-256: `69431bfedb055de55271205f33c9af066f2e67fe0e65d88a69b9e1a222114cbd`.
+  Important: this CI-signed APK is **not** a compatible in-place update for the
+  preview installed with the PC's persistent Android debug signing certificate.
+- An exact v1.3.8 preview was re-signed on the authorized PC with the pre-existing
+  keystore. Verified package `com.azrael.pixivdumpsync.nocturne`, versionCode
+  `37`, versionName `1.3.8-preview`, certificate SHA-256
+  `9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad`;
+  locally signed APK SHA-256
+  `7e32aab84c37d4f676d6e54ec7a1af8e6a9a2332d407c0c3f9ef7171e4b5bb24`.
+  Local PC path:
+  `%TEMP%\\asterion-install\\Asterion-Downloader-v1.3.8-Preserve-Data.apk`.
+- **Not installed:** latest `adb devices -l` returns no connected Android
+  devices. Uploading the locally signed artifact to GitHub was blocked by tool
+  safety checks, so only the independently installable CI APK is on the release.
+  Do not suggest using that APK over the installed preview. Do not uninstall
+  the existing original or preview to make it installable.
