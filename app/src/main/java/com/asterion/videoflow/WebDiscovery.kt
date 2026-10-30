@@ -18,7 +18,7 @@ object WebDiscovery {
     private val mediaFiles=Regex("\\.(mp4|webm|mov|m3u8|mpd)(?:[?#]|$)",RegexOption.IGNORE_CASE)
     private fun privateHost(host:String):Boolean {
         val h=host.lowercase()
-        return h=="localhost"||h.endsWith(".local")||h.endsWith(".onion")||
+        return h=="localhost"||h.endsWith(".local")||
             h=="127.0.0.1"||h=="0.0.0.0"||h=="::1"||h.startsWith("127.")||
             h.startsWith("192.168.")||h.startsWith("10.")||h.startsWith("169.254.")||
             (h.startsWith("172.") && (h.split('.').getOrNull(1)?.toIntOrNull()?.let{it in 16..31}==true))
