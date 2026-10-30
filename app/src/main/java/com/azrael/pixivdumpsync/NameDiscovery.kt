@@ -74,10 +74,9 @@ object NameCrawler {
                             found.addAll(indexed.hits)
                             errors.addAll(indexed.failures)
                         }else {
-                            val matches=namedSource(watch.name,watch.source)
-                            found.addAll(matches.map{(title,url)->
-                                RankedHit(title,url,"Custom source")
-                            })
+                            val custom=KeywordSources.searchCustom(context,watch.name,watch.source)
+                            found.addAll(custom.hits)
+                            errors.addAll(custom.failures)
                         }
                         val hits=SearchRanking.deduplicate(watch.name,found)
                         SearchResultsDb(context).use{results->
