@@ -21,5 +21,6 @@ class UnifiedDownloadTest {
         val b=ChapterLink("https://example.com/10","Chapter 10")
         val c=ChapterLink("https://example.com/2","Chapter 2")
         assertEquals(listOf(c,a,b),ChapterScraper.sort(listOf(b,a,c,c)))
+        assertEquals(75.5,ChapterScraper.naturalKey("Chapter 75.5 - Season 1"),0.001)
     }
 }
