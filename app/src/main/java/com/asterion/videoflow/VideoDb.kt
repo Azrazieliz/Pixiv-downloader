@@ -9,14 +9,19 @@ import android.net.Uri
 data class Watch(val id: Long, val address: String, val label: String, val enabled: Boolean, val lastCheck: Long, val error: String?)
 data class Video(val id: Long, val url: String, val title: String, val status: String, val progress: Int, val savedUri: String?, val error: String?, val watchId: Long)
 
-class VideoDb(context: Context): SQLiteOpenHelper(context, "videoflow.sqlite", null, 1) {
+class VideoDb(context: Context): SQLiteOpenHelper(context, "videoflow.sqlite", null, 2) {
     private val appContext = context.applicationContext
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE watches(id INTEGER PRIMARY KEY, address TEXT UNIQUE NOT NULL, label TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, last_check INTEGER NOT NULL DEFAULT 0, error TEXT)")
-        db.execSQL("CREATE TABLE videos(id INTEGER PRIMARY KEY, url TEXT UNIQUE NOT NULL, title TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued', progress INTEGER NOT NULL DEFAULT 0, saved_uri TEXT, error TEXT, watch_id INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0)")
+        db.execSQL("CREATE TABLE videos(id INTEGER PRIMARY KEY, url TEXT UNIQUE NOT NULL, title TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued', progress INTEGER NOT NULL DEFAULT 0, saved_uri TEXT, error TEXT, watch_id INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, retry_after INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE INDEX video_queue ON videos(state, updated)")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if(oldVersion<2) {
+            db.execSQL("ALTER TABLE videos ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE videos ADD COLUMN retry_after INTEGER NOT NULL DEFAULT 0")
+        }
+    }
     fun addWatch(address: String, label: String = address): Boolean {
         val normalized = address.trim()
         if (!WebDiscovery.isUrl(normalized)) return false
@@ -51,7 +56,16 @@ class VideoDb(context: Context): SQLiteOpenHelper(context, "videoflow.sqlite", n
         }
         return writableDatabase.insertWithOnConflict("videos", null, row, SQLiteDatabase.CONFLICT_IGNORE) != -1L
     }
-    fun next(): Video? = listVideos(200).firstOrNull { it.status == "queued" }
+    fun next(): Video? {
+        val now=System.currentTimeMillis().toString()
+        readableDatabase.rawQuery("""SELECT id,url,title,state,progress,saved_uri,error,watch_id
+            FROM videos WHERE state='queued' OR (state='retry_wait' AND retry_after<=?)
+            ORDER BY updated ASC LIMIT 1""",arrayOf(now)).use { c ->
+            if(!c.moveToFirst())return null
+            return Video(c.getLong(0),c.getString(1),c.getString(2),c.getString(3),
+                c.getInt(4),c.getString(5),c.getString(6),c.getLong(7))
+        }
+    }
     fun listVideos(limit: Int = 100): List<Video> {
         val out=ArrayList<Video>()
         readableDatabase.rawQuery("SELECT id,url,title,state,progress,saved_uri,error,watch_id FROM videos ORDER BY CASE state WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, updated DESC LIMIT ${limit.coerceIn(1,1000)}", null).use { c ->
