@@ -29,3 +29,29 @@
 - Android emulator API 36 smoke tests were unable to install the APK due to ADB broken pipe, not a demonstrated app exception. Updated smoke workflow at `8ce18acd` switches to API 35 and a single preview install.
 - Newer CI APK, on-device download of a Toonily chapter, complete X account archive, actual SOCKS operation and keyword discovery were NOT yet verified as of this record.
 - Download result and errors must always be distinguishable, with retries accessible. Do not claim zero errors or universal discoverability.
+
+
+## Federated source discovery extension (2026-10-30)
+
+- Multiple persisted sources can now be configured in Asterion Downloader > Settings
+  using one source definition per line:
+  - `searxng|https://search.example` for SearXNG JSON index APIs
+  - `html|https://site.example/search?q={query}` for conventional site search result pages
+  - `searxng|http://example.onion` with a separately running local Tor-compatible SOCKS proxy
+- Source definitions do not blacklist a site for being adult-oriented, unlicensed,
+  a mirror, or reachable via Tor. The user chooses configured sources.
+- Query text is sent to each provider unmodified apart from URL encoding; source
+  metadata, original result URL, relevance score and search history are persisted
+  separately from completed download records in `asterion_search_results.sqlite`.
+- Discovery does not equate to a playable or legal download. Generic HTML sites
+  may change markup or require browser login; password/DRM bypass is not implemented.
+  Search indexes never guarantee exhaustive or accurate results.
+- Per-source failures are saved to each creator watch and do not make the other
+  configured sources fail. A low relevance result remains reviewable rather than
+  being automatically downloaded. Duplicate tracking-link variants are collapsed
+  for display; the original source URL remains unchanged for downloads.
+- If a local SOCKS proxy is enabled, configured search requests use that proxy
+  and do not silently fall back to a direct connection. The proxy must be running.
+- The existing Pixiv, photo-only X, chapter ZIP, video, signing and data
+  preservation contracts remain in force. Confirm live operation and original
+  certificate update separately from Android CI.
