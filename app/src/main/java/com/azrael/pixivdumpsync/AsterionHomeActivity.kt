@@ -284,6 +284,7 @@ class AsterionHomeActivity:Activity(){
     }
     private fun renderSources(){
         section("Monitored sources","Pixiv artists, image sites, video accounts and name searches.")
+        put(body,button("SCAN X PHOTOS"){XPhotoEngine.start(this)})
         val watches=VideoDb(this).use{it.listWatches()}
         for(w in watches){
             val c=card()
