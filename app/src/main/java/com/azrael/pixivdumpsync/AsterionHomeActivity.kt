@@ -62,19 +62,20 @@ class AsterionHomeActivity:Activity(){
         label.addView(text("ASTERION DOWNLOADER",19f,theme.white,true))
         label.addView(text("Save images, videos and chapters",11f,theme.secondary))
         head.addView(label,LinearLayout.LayoutParams(0,-2,1f))
-        val quick=theme.row(this)
+        root.addView(head)
+        val quick=theme.row(this).apply{
+            setPadding(dp(14),0,dp(14),dp(6))
+        }
         for((name,target) in listOf("Queue" to "Queue","Files" to "Library",
             "Settings" to "Settings")){
-            quick.addView(text(name,11f,theme.secondary,true).apply{
+            quick.addView(text(name,12f,theme.secondary,true).apply{
                 gravity=Gravity.CENTER
-                setPadding(dp(7),dp(12),dp(7),dp(12))
                 isClickable=true
                 isFocusable=true
                 setOnClickListener{page=target;render();scroller.scrollTo(0,0)}
-            })
+            }, LinearLayout.LayoutParams(0,dp(38),1f))
         }
-        head.addView(quick)
-        root.addView(head)
+        root.addView(quick)
         scroller=ScrollView(this).apply{isFillViewport=true}
         body=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL
