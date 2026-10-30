@@ -74,10 +74,10 @@ object ChapterArchives {
                 require(conn.contentType.orEmpty().startsWith("image/")){
                     "Image URL did not return an image: ${conn.contentType}"}
                 conn.getInputStream().buffered().use{input->
-                    FileOutputStream(part).use{output->input.copyTo(output,128*1024)}
+                    FileOutputStream(partial).use{output->input.copyTo(output,128*1024)}
                 }
-                require(part.length()>128){"Image response was empty or truncated"}
-                require(part.renameTo(target)){"Cannot commit cached page"}
+                require(partial.length()>128){"Image response was empty or truncated"}
+                require(partial.renameTo(target)){"Cannot commit cached page"}
                 return
             }catch(t:Exception){
                 cause=t;partial.delete()
