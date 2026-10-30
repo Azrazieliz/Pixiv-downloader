@@ -27,6 +27,7 @@ open class HttpClient {
             .ignoreHttpErrors(true)
             .header("Accept-Language", "en-US,en;q=0.8")
         if (!referer.isNullOrBlank()) connection.referrer(referer)
+        SiteSession.cookie(url)?.let { connection.header("Cookie",it) }
         val response = connection.execute()
         if (response.statusCode() !in 200..299) {
             throw HttpStatusException(response.statusCode(), "HTTP ${response.statusCode()} for $url")
@@ -45,6 +46,7 @@ open class HttpClient {
             conn.setRequestProperty("User-Agent", USER_AGENT)
             conn.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
             if (!referer.isNullOrBlank()) conn.setRequestProperty("Referer", referer)
+            SiteSession.cookie(url)?.let { conn.setRequestProperty("Cookie",it) }
             val code = conn.responseCode
             if (code !in 200..299) {
                 conn.disconnect()
