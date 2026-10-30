@@ -1,0 +1,180 @@
+package com.azrael.pixivdumpsync
+
+import android.app.*
+import android.content.*
+import android.net.Uri
+import android.os.*
+import android.provider.MediaStore
+import org.json.JSONObject
+import org.jsoup.Jsoup
+import java.net.URI
+import java.net.URLEncoder
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** X/Twitter image archiver. Ignores videos; no media URL is routed to VideoFlow. */
+object XPhotoEngine {
+    private val working=AtomicBoolean(false)
+    private val executor=Executors.newSingleThreadExecutor()
+    private const val CHANNEL="asterion_x_images"
+    private fun json(url:String):JSONObject {
+        val response=Jsoup.connect(url).ignoreContentType(true)
+            .timeout(30000).maxBodySize(12_000_000).execute()
+        require(response.statusCode() in 200..299){
+            "X media metadata HTTP ${response.statusCode()}"}
+        val value=JSONObject(response.body())
+        require(value.optInt("code",200) in 200..299) {
+            value.optString("message","X media API unavailable")
+        }
+        return value
+    }
+    private fun enqueuePhotos(db:XPhotoQueue,source:String,entry:JSONObject):Int {
+        val photos=entry.optJSONObject("media")?.optJSONArray("photos")?:return 0
+        val id=entry.optString("id")
+        var total=0
+        for(i in 0 until photos.length()) {
+            val photo=photos.optJSONObject(i)?:continue
+            val url=photo.optString("url")
+            if(!url.startsWith("https://"))continue
+            if(db.addPhoto(source,id,url))total++
+        }
+        return total
+    }
+    private fun scan(db:XPhotoQueue,source:String,handle:String,initialCursor:String?){
+        val path=runCatching{URI(source).path.orEmpty()}.getOrDefault("")
+        val id=Regex("/status/([0-9]+)").find(path)?.groupValues?.get(1)
+        if(id!=null){
+            val root=json("https://api.fxtwitter.com/2/status/$id")
+            val post=root.optJSONObject("status")?:root.optJSONObject("tweet")
+                ?:error("Post metadata not returned")
+            enqueuePhotos(db,source,post)
+            return
+        }
+        var cursor=initialCursor
+        val visited=HashSet<String>()
+        // A bounded session with a persisted cursor; subsequent jobs continue backfill.
+        for(page in 0 until 20) {
+            val target="https://api.fxtwitter.com/2/profile/$handle/media?count=100"+
+                (if(cursor.isNullOrBlank())"" else
+                    "&cursor="+URLEncoder.encode(cursor,"UTF-8"))
+            val root=json(target)
+            val list=root.optJSONArray("results")?:error("X media list missing")
+            for(i in 0 until list.length()){
+                val post=list.optJSONObject(i)?:continue
+                enqueuePhotos(db,source,post)
+            }
+            val next=root.optJSONObject("cursor")?.optString("bottom")
+                ?.takeIf{it.isNotBlank()}
+            db.cursor(source,handle,next)
+            if(next==null||!visited.add(next))break
+            cursor=next
+        }
+    }
+    fun notice(context:Context,description:String):Notification {
+        context.getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(NotificationChannel(
+                CHANNEL,"Asterion X photo downloads",NotificationManager.IMPORTANCE_LOW))
+        val open=PendingIntent.getActivity(context,0,
+            Intent(context,AsterionHomeActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return Notification.Builder(context,CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("Asterion · X Images")
+            .setContentText(description.take(100)).setContentIntent(open)
+            .setOngoing(true).build()
+    }
+    fun start(context:Context) {
+        val intent=Intent(context,XPhotoService::class.java)
+        if(Build.VERSION.SDK_INT>=26)context.startForegroundService(intent)
+        else context.startService(intent)
+    }
+    fun submit(context:Context,onStatus:(String)->Unit={})=executor.submit{
+        if(!working.compareAndSet(false,true))return@submit
+        try{
+            XPhotoQueue(context).use{db->
+                db.recover()
+                for((source,handle,cursor) in db.sources()) {
+                    onStatus("Scanning X images @${handle}")
+                    runCatching{scan(db,source,handle,cursor)}
+                        .onFailure{db.cursor(source,handle,cursor,it.message)}
+                }
+                while(true){
+                    val photo=db.next()?:break
+                    db.change(photo.id,"running")
+                    try{
+                        val saved=fetchPhoto(context,photo.photo)
+                        db.change(photo.id,"done",saved)
+                        onStatus("Saved X image")
+                    }catch(t:Exception){
+                        db.change(photo.id,"error",error=t.message)
+                        onStatus("X image failed")
+                    }
+                }
+            }
+        }finally{working.set(false)}
+    }
+    private fun fetchPhoto(context:Context,source:String):String {
+        require(source.startsWith("https://")){"Invalid image URL"}
+        val address=Uri.parse(source)
+        val fileBase=address.lastPathSegment.orEmpty()
+            .substringBefore('?').substringBeforeLast('.')
+            .replace(Regex("[^A-Za-z0-9_-]"),"_")
+            .take(90).ifBlank{"x_photo"}
+        val original=address.getQueryParameter("format")
+        val ext=original?.takeIf{it in listOf("jpg","jpeg","png","webp")}
+            ?:address.lastPathSegment.orEmpty().substringAfterLast('.',"jpg")
+                .lowercase().takeIf{it in listOf("jpg","jpeg","png","webp")}?: "jpg"
+        var last:Exception?=null
+        repeat(4){attempt->
+            try{
+                val connection=java.net.URL(source).openConnection().apply{
+                    connectTimeout=30000;readTimeout=45000
+                    setRequestProperty("User-Agent","Mozilla/5.0")
+                }
+                val mime=connection.contentType.orEmpty().substringBefore(';').trim()
+                require(mime.startsWith("image/")){"X server returned $mime"}
+                val values=ContentValues().apply{
+                    put(MediaStore.Downloads.DISPLAY_NAME,"$fileBase.$ext")
+                    put(MediaStore.Downloads.MIME_TYPE,mime)
+                    put(MediaStore.Downloads.RELATIVE_PATH,
+                        Environment.DIRECTORY_DOWNLOADS+"/AsterionDownloader/X/")
+                    put(MediaStore.Downloads.IS_PENDING,1)
+                }
+                val dest=context.contentResolver.insert(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,values)
+                    ?:error("Cannot create X image")
+                try{
+                    var bytes=0L
+                    connection.getInputStream().buffered().use{input->
+                        context.contentResolver.openOutputStream(dest,"w")!!.use{output->
+                            val buffer=ByteArray(65536)
+                            while(true){val n=input.read(buffer);if(n<0)break
+                                output.write(buffer,0,n);bytes+=n}
+                        }
+                    }
+                    require(bytes>128){"X image truncated"}
+                    context.contentResolver.update(dest,ContentValues().apply{
+                        put(MediaStore.Downloads.IS_PENDING,0)},null,null)
+                    return dest.toString()
+                }catch(t:Exception){
+                    context.contentResolver.delete(dest,null,null);throw t
+                }
+            }catch(t:Exception){
+                last=t;if(attempt<3)Thread.sleep(1000L*(attempt+1))
+            }
+        }
+        throw last?:IllegalStateException("X photo download failed")
+    }
+}
+class XPhotoService:Service(){
+    override fun onBind(intent:Intent?):IBinder?=null
+    override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
+        startForeground(25823,XPhotoEngine.notice(this,"Checking images"))
+        val future=XPhotoEngine.submit(applicationContext){message->
+            getSystemService(NotificationManager::class.java)
+                .notify(25823,XPhotoEngine.notice(this,message))
+        }
+        Thread{runCatching{future.get()};stopSelfResult(startId)}.start()
+        return START_REDELIVER_INTENT
+    }
+}
