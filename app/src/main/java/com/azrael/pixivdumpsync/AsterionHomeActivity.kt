@@ -312,6 +312,16 @@ class AsterionHomeActivity:Activity(){
     }
     private fun renderSettings(){
         section("Settings","Account, downloads, storage and cloud settings.")
+        val netPrefs=getSharedPreferences("video_options",MODE_PRIVATE)
+        val tor=Switch(this).apply{
+            text="Use local SOCKS proxy for video transfers"
+            setTextColor(theme.white)
+            isChecked=netPrefs.getBoolean("tor_proxy",false)
+            setOnCheckedChangeListener{_,value->
+                netPrefs.edit().putBoolean("tor_proxy",value).apply()
+            }
+        }
+        put(body,tor)
         val prefs=getSharedPreferences("video_options",MODE_PRIVATE)
         val quality=card()
         put(quality,text("VIDEO QUALITY",14f,theme.white,true),0)
