@@ -99,3 +99,42 @@
   on device, verify the Toonily chapter ZIP, X photos, post-reboot persistence,
   actual SOCKS/Tor connection, provider error reporting and safe incremental
   upgrades. PR #17 remains separate from production until verified.
+
+
+## Android preview v1.3.1 on-device UX and Tor verification — 2026-10-30
+
+- The user reported the initial unified home was incomprehensible and that
+  Orbot was connected. The v1.3.1 Android home was simplified in
+  `AsterionHomeActivity`: clear Download Link and Find Videos by Name
+  actions, a Paste from Clipboard control, a persistent results list with
+  explicit Download Result buttons, and four main tabs:
+  Download, Activity, Files, Settings. Existing engines/data are preserved.
+  More technical source management remains accessible from Settings.
+- Orbot 127.0.0.1:9050 was tested over ADB forwarding:
+  `https://check.torproject.org/api/ip` responded `{"IsTor":true,...}`.
+  This supersedes the earlier incomplete Tor bootstrap test.
+- Stored `video_options.xml` in the existing preview app sandbox with
+  `tor_proxy=true` and `tor_port=9050`. Verified its contents.
+  The app's search and video engines were updated to use the Tor proxy
+  only for `.onion` URLs; ordinary web sources remain direct.
+  A fully functioning `.onion` website extraction was not yet tested.
+- GitHub CI and direct APK release v1.3.1 preview succeeded:
+  `https://github.com/Azrazieliz/Pixiv-downloader/releases/tag/asterion-downloader-v1.3.1-preview-20261030`.
+  Release APK SHA-256:
+  `7af341bf4b981c1acabe6a720f1ced40c2650146d9a5a3353ab900938e5af8e6`.
+- Installed over the existing preview via ADB with `adb install -r`
+  and the same local preview signing keystore, NO app uninstall/data clear.
+  Verified Android reports package `com.azrael.pixivdumpsync.nocturne`,
+  versionCode 30, versionName `1.3.1-preview`, and successful cold
+  launch of `AsterionHomeActivity`.
+  Confirmed original production app remained version 0.6.1.
+- Verified on-device UI hierarchy contains the simplified labels
+  "Download from a link", "Find videos by name",
+  "DOWNLOAD LINK", and "PASTE FROM CLIPBOARD".
+  Full visual screenshot QA was blocked by a Windows paging-file/memory
+  error on the connected PC; no claim of screenshot verification.
+- The five configured providers and Tor preferences persisted through
+  the incremental preview upgrade. The Android app was not reset.
+- Still necessary: site-specific scraping validation, Tor hidden-site
+  downloads, comprehensive queue persistence tests, provider search
+  relevance, screenshot/UI QA when the PC permits.
