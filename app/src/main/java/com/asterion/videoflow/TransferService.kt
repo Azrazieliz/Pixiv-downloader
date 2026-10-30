@@ -49,6 +49,7 @@ object VideoEngine {
                 return
             }
             if(scan) {
+                com.azrael.pixivdumpsync.NameCrawler.scan(context,onStatus)
                 val settings=context.getSharedPreferences("video_options",Context.MODE_PRIVATE)
                 val max=settings.getInt("max_new",3).coerceIn(1,20)
                 for(watch in db.listWatches().filter { it.enabled }) {
