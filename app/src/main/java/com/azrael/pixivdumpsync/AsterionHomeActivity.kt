@@ -26,8 +26,9 @@ class AsterionHomeActivity:Activity(){
     private lateinit var root:LinearLayout
     private lateinit var body:LinearLayout
     private lateinit var scroller:ScrollView
-    private var page="Pixiv"
-    private val pages=listOf("Pixiv","Cosplay","X","Videos","Queue","Library")
+    private var page="Accounts"
+    private var accountSection="Pixiv"
+    private val pages=listOf("Accounts","Videos")
     private val navButtons=linkedMapOf<String,TextView>()
     private fun dp(v:Int)=theme.px(this,v)
     private fun text(v:String,size:Float=14f,tint:Int=theme.white,bold:Boolean=false)=
@@ -61,13 +62,18 @@ class AsterionHomeActivity:Activity(){
         label.addView(text("ASTERION DOWNLOADER",19f,theme.white,true))
         label.addView(text("Save images, videos and chapters",11f,theme.secondary))
         head.addView(label,LinearLayout.LayoutParams(0,-2,1f))
-        val gear=text("SETTINGS",11f,theme.secondary,true).apply{
-            gravity=Gravity.CENTER
-            setPadding(dp(9),dp(12),dp(9),dp(12))
-            isClickable=true
-            setOnClickListener{page="Settings";render();scroller.scrollTo(0,0)}
+        val quick=theme.row(this)
+        for((name,target) in listOf("Queue" to "Queue","Files" to "Library",
+            "Settings" to "Settings")){
+            quick.addView(text(name,11f,theme.secondary,true).apply{
+                gravity=Gravity.CENTER
+                setPadding(dp(7),dp(12),dp(7),dp(12))
+                isClickable=true
+                isFocusable=true
+                setOnClickListener{page=target;render();scroller.scrollTo(0,0)}
+            })
         }
-        head.addView(gear)
+        head.addView(quick)
         root.addView(head)
         scroller=ScrollView(this).apply{isFillViewport=true}
         body=LinearLayout(this).apply{
@@ -78,8 +84,8 @@ class AsterionHomeActivity:Activity(){
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
         val tabs=theme.row(this).apply{setPadding(dp(5),dp(7),dp(5),dp(7));setBackgroundColor(theme.surface)}
         pages.forEach{tab->
-            val title=when(tab){"X"->"X ART";"Library"->"Files";else->tab}
-            val t=text(title,11f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
+            val title=if(tab=="Accounts")"ACCOUNTS & SITES" else "VIDEO URLS"
+            val t=text(title,14f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
                 gravity=Gravity.CENTER;minHeight=dp(50)
                 isClickable=true;isFocusable=true
                 setOnClickListener{page=tab;render();scroller.scrollTo(0,0)}
@@ -102,9 +108,7 @@ class AsterionHomeActivity:Activity(){
         }
         body.removeAllViews()
         when(page){
-            "Pixiv"->AsterionAccountPanels.pixiv(this,body){render()}
-            "Cosplay"->AsterionAccountPanels.cosplay(this,body){render()}
-            "X"->AsterionAccountPanels.x(this,body){render()}
+            "Accounts"->renderAccounts()
             "Videos"->renderAdd()
             "Queue"->renderQueue()
             "Library"->renderLibrary()
@@ -112,13 +116,35 @@ class AsterionHomeActivity:Activity(){
             else->renderSettings()
         }
     }
+    private fun renderAccounts(){
+        section("Accounts & sites",
+            "Connect creators, sync new posts, or backfill their complete history.")
+        val tabs=theme.row(this)
+        listOf("Pixiv","Cosplay","X").forEach { selected ->
+            tabs.addView(theme.chip(this,
+                if(selected=="X")"X / Photos" else selected,
+                selected==accountSection){
+                accountSection=selected
+                render()
+                scroller.scrollTo(0,0)
+            },LinearLayout.LayoutParams(0,-2,1f).apply {
+                leftMargin=if(selected=="Pixiv")0 else dp(7)
+            })
+        }
+        put(body,tabs,13)
+        when(accountSection){
+            "Pixiv"->AsterionAccountPanels.pixiv(this,body){render()}
+            "Cosplay"->AsterionAccountPanels.cosplay(this,body){render()}
+            else->AsterionAccountPanels.x(this,body){render()}
+        }
+    }
     private fun renderAdd(){
-        section("Videos & Search","Search video providers or download a direct link. Artist and image sync are in Pixiv, Cosplay and X.")
+        section("Video downloads","Paste a direct video URL or search for a title. Account syncing is under Accounts & sites.")
         val byLink=card()
-        put(byLink,text("1  Download from a link",18f,theme.white,true),0)
-        put(byLink,text("Videos · Pixiv · X images · Galleries · Full chapter ZIPs",
+        put(byLink,text("Download a video URL",18f,theme.white,true),0)
+        put(byLink,text("Video sites and direct files. Other supported links are routed automatically.",
             12f,theme.secondary))
-        val input=edit("Paste a link here")
+        val input=edit("Paste a video URL")
         val clip=getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         put(byLink,input)
         put(byLink,theme.action(this,"DOWNLOAD LINK",true){
@@ -131,7 +157,7 @@ class AsterionHomeActivity:Activity(){
         put(body,byLink,12)
 
         val byName=card()
-        put(byName,text("2  Find videos by name",18f,theme.white,true),0)
+        put(byName,text("Search videos by name",18f,theme.white,true),0)
         put(byName,text("Search all saved sources. Review the matches and choose what to download.",
             12f,theme.secondary))
         val query=edit("Creator, title or keywords")
