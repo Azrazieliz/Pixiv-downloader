@@ -43,6 +43,12 @@ class SearchResultsDb(context:Context):
         }finally{db.endTransaction()}
         return stored
     }
+    fun wasQueued(query:String,url:String):Boolean =
+        readableDatabase.rawQuery(
+            "SELECT queued FROM results WHERE query=? AND url_key=?",
+            arrayOf(query,SearchRanking.canonicalKey(url))).use { c ->
+            c.moveToFirst() && c.getInt(0)==1
+        }
     fun markQueued(query:String,url:String) {
         writableDatabase.update("results",ContentValues().apply{put("queued",1)},
             "query=? AND url_key=?",arrayOf(query,SearchRanking.canonicalKey(url)))
