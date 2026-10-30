@@ -21,19 +21,24 @@
         <activity android:name="com.azrael.galleryflow.MainActivity" android:exported="false" />
         <activity android:name="com.azrael.galleryflow.GalleryDetailActivity" android:exported="false" />
         <activity android:name="com.asterion.videoflow.MainActivity"
-            android:exported="true" android:windowSoftInputMode="adjustResize">
+            android:exported="false" android:windowSoftInputMode="adjustResize"/>
+        <activity android:name=".DownloaderHubActivity" android:exported="false"/>
+        <activity android:name=".AsterionHomeActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="text/plain"/>
             </intent-filter>
         </activity>
-        <activity android:name=".DownloaderHubActivity" android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+        <service android:name=".ChapterArchiveService"
+            android:exported="false" android:foregroundServiceType="dataSync"
+            android:stopWithTask="false"/>
+        <service android:name=".ChapterRecoveryService"
+            android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE"/>
         <service android:name="com.asterion.videoflow.TransferService"
             android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false"/>
         <service android:name="com.asterion.videoflow.PollJobService"
