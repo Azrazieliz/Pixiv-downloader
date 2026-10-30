@@ -8,7 +8,7 @@ data class ChapterLink(val url:String,val title:String)
 object ChapterScraper {
     private val number=Regex("(\\d+(?:\\.\\d+)?)")
     private val chapter=Regex("(?i)(chapter|chapitre|episode|chap[-_ /]?[0-9]+)")
-    fun naturalKey(text:String):Double=number.findAll(text).lastOrNull()
+    fun naturalKey(text:String):Double=number.find(text)
         ?.value?.toDoubleOrNull()?:Double.MAX_VALUE
     fun sort(items:List<ChapterLink>):List<ChapterLink> =
         items.distinctBy{it.url}.sortedWith(compareBy<ChapterLink>{naturalKey(it.title)}
