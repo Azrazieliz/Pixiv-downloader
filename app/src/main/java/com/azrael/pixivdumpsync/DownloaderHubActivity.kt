@@ -39,7 +39,7 @@ class DownloaderHubActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
         }
-        brand.addView(design.text(this, "N O C T U R N E", 18f, design.white, true))
+        brand.addView(design.text(this, "A S T E R I O N", 18f, design.white, true))
         brand.addView(design.text(this, "A PERSONAL MEDIA ARCHIVE", 10f, design.secondary, true)
             .apply { letterSpacing = .1f })
         masthead.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
@@ -52,7 +52,7 @@ class DownloaderHubActivity : Activity() {
                 "Everything worth\nkeeping, in one place.", 29f, design.white, true),
                 design.lp(this@DownloaderHubActivity, 11))
             addView(design.text(this@DownloaderHubActivity,
-                 "Kuroha for Pixiv. Kyora for cosplay galleries. Add other websites only when you want them.",
+                 "Kuroha for Pixiv. Kyora for cosplay galleries. VideoFlow for videos.",
                 13f, design.secondary), design.lp(this@DownloaderHubActivity, 11, 18))
             addView(design.action(this@DownloaderHubActivity, "Add a website to Kyora", true) {
                 openGallery(add = true)
@@ -70,6 +70,12 @@ class DownloaderHubActivity : Activity() {
             "Cosplay creators, albums and flat photo archive",
             design.primary) { openGallery() }, design.lp(this, 11))
 
+        root.addView(workspace("03", "VIDEOFLOW  /  VIDEO",
+            "Video links, downloads, source watches and saved videos",
+            design.violet) {
+            startActivity(Intent(this, com.asterion.videoflow.MainActivity::class.java))
+        }, design.lp(this, 11))
+
         val title = design.row(this)
         title.addView(design.text(this, "Kyora websites", 19f, design.white, true),
             LinearLayout.LayoutParams(0, -2, 1f))
@@ -78,7 +84,7 @@ class DownloaderHubActivity : Activity() {
         savedSites = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(savedSites)
         root.addView(design.text(this,
-             "No extra sites are bundled. Add or remove websites directly in Kyora without affecting Kuroha.",
+             "Kyora websites are managed independently from Kuroha and VideoFlow.",
             12f, design.subdued), design.lp(this, 14))
         setContentView(screen)
     }

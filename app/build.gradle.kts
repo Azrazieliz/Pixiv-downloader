@@ -21,8 +21,8 @@ android {
         applicationId = "com.azrael.pixivdumpsync"
         minSdk = 29
         targetSdk = 35
-        versionCode = 26
-        versionName = "1.1.0"
+        versionCode = 27
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "android.app.Instrumentation"
     }
@@ -55,6 +55,8 @@ android {
         }
     }
 
+    packaging { jniLibs { useLegacyPackaging = true } }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -67,6 +69,7 @@ kotlin {
 
 dependencies {
     implementation("org.jsoup:jsoup:1.18.1")
+    implementation("dev.ffmpegkit-maintained:yt-dlp-android:2.0.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

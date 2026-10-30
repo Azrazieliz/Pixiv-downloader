@@ -75,3 +75,10 @@ requires approved working API credentials and a live account.
 - Pixiv Ugoira remain skipped as before.
 - OAuth login/refresh automation, folder discovery and production cloud
   integration tests are gated on approved TeraBox partner credentials.
+
+## Asterion Downloader v1.2.0 — VideoFlow fusion
+
+The Android home presents Kuroha (Pixiv), Kyora (cosplay) and VideoFlow
+(video URL download and monitored source pages) in a single APK.
+VideoFlow persists its own queue and videos under Downloads/VideoFlow/;
+Pixiv/Kyora auth, databases and filters are retained.

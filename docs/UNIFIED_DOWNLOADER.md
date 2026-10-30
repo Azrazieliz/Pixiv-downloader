@@ -4,12 +4,22 @@ Nocturne is a separately installable test variant of the existing merged Android
 downloader. It does NOT replace production Kuroha, which retains its original
 package/signing workflow.
 
-## Exactly two core workspaces
+## Three integrated workspaces
 
 - **Kuroha / Pixiv:** existing Pixiv account, following feed, artist watchlists,
   art downloads, Pixiv tag exclusions, its own sync and storage.
 - **Kyora / Cosplay:** dedicated Kiutaku adapter, cosplay galleries, flat downloads,
   per-site/global excluded tags, gallery backfill/retries, Round Sync COPY handoff.
+- **VideoFlow / Video:** direct video-page and media URLs; four-tab
+  Home/Downloads/Sources/Settings UI, yt-dlp extraction engine, persistent queue,
+  retries and diagnostics, scheduled source watches, cookies.txt and Round Sync.
+
+VideoFlow is the third activity inside Asterion Downloader, not a separate
+APK. Its database (videoflow.sqlite), preferences (video_options), and
+cookies (files/videoflow/cookies.txt) are isolated from Kuroha/Kyora. It saves
+videos in Downloads/VideoFlow/. Existing files are preserved. Android prevents
+reading the app-private history of the separately installed VideoFlow;
+no cross-app deletion or uninstall is performed.
 
 There are NO bundled image-site catalogs, booru provider APIs, or nonfunctional
 site-specific placeholder adapters. Only the Kiutaku adapter and a best-effort
