@@ -118,6 +118,21 @@ object KeywordSources {
         return SearchOutcome(SearchRanking.deduplicate(keyword,collected),
             providers.size,errors)
     }
+    /** Search one explicitly supplied site, including HTML sites with unusual page URLs. */
+    fun searchCustom(context:Context,keyword:String,address:String):SearchOutcome {
+        require(SearchRanking.validUrl(
+            address.replace("{query}","sample").replace("{name}","sample"))) {
+            "Invalid user-supplied source URL"
+        }
+        val provider=SearchProvider(SearchProviderKind.HTML,address,"Custom site")
+        return try {
+            SearchOutcome(SearchRanking.deduplicate(keyword,
+                html(context,provider,keyword)),1,emptyList())
+        }catch(t:Exception) {
+            SearchOutcome(emptyList(),1,listOf(
+                "Custom site: ${t.message?:t.javaClass.simpleName}"))
+        }
+    }
     /** Compatibility entry point for older UI and stored creator watch records. */
     fun search(context:Context,keyword:String):List<Pair<String,String>> =
         searchDetailed(context,keyword).hits.map{it.title to it.url}
