@@ -79,28 +79,50 @@ object KeywordSources {
         val url=provider.url.replace("{query}",encoded).replace("{name}",encoded)
         val doc=connection(context,url).get()
         val found=ArrayList<RankedHit>()
-        // Honor ordinary and adult site search result layouts without a domain catalog.
-        val links=doc.select("article a[href], .search-result a[href], .result a[href], "+
-            ".video a[href], .thumb a[href], .item a[href], a[href]")
-        for(node in links.take(1400)) {
-            val absolute=runCatching {
+        val tokens=keyword.trim().lowercase().split(Regex("\\s+"))
+            .filter{it.isNotBlank()}
+        val selectors="article a[href], .search-result a[href], .result a[href], "+
+            ".video a[href], .thumb a[href], .item a[href], "+
+            "[class*=video] a[href], [class*=result] a[href], a[href]"
+        val sourceHost=URI(doc.location()).host.orEmpty().removePrefix("www.")
+        for(node in doc.select(selectors).take(1600)){
+            if(node.closest("header, footer, nav, aside, .menu, .sidebar, .navigation")!=null)
+                continue
+            val absolute=runCatching{
                 URI(doc.location()).resolve(node.attr("href")).toString()
             }.getOrNull()?:continue
             if(!SearchRanking.validUrl(absolute))continue
+            val uri=URI(absolute)
+            if(uri.path.orEmpty().trimEnd('/')==
+                URI(doc.location()).path.orEmpty().trimEnd('/') &&
+                uri.host==URI(doc.location()).host)continue
+            if(Regex("(?i)(/(?:search|searches|category|categories|tags?|help|login|signup|privacy|terms)(?:[/?#]|$))")
+                .containsMatchIn(uri.path.orEmpty()))continue
+            val container=node.closest(
+                "article, .search-result, .result, .video, .thumb, .item, "+
+                "[class*=result], [class*=video]")
             val title=node.attr("title").ifBlank{node.text().trim()}
                 .ifBlank{node.selectFirst("img[alt]")?.attr("alt").orEmpty()}
-            if(title.length<3)continue
-            if(URI(absolute).path.orEmpty()==URI(doc.location()).path.orEmpty())continue
-            val container=node.closest("article, .search-result, .result, .video, .item")
-            val snippet=container?.text().orEmpty().take(450)
-            val resemblesMedia=Regex("(?i)(video|watch|movie|film|clip|scene|view|post|stream)")
-                .containsMatchIn(URI(absolute).path.orEmpty())||
-                Regex("(?i)\\.(mp4|webm|mov|m3u8|mpd)([?#]|$)").containsMatchIn(absolute)
-            // Retain title-relevant links even when a site's URL lacks video words.
-            if(!resemblesMedia && SearchRanking.relevance(keyword,title,snippet)==0)continue
-            found.add(RankedHit(title.take(220),absolute,provider.label,snippet))
+                .ifBlank{container?.selectFirst("img[alt]")?.attr("alt").orEmpty()}
+                .take(220)
+            if(title.length<4)continue
+            val description=container?.text().orEmpty().take(300)
+            val normalized=(title+" "+description).lowercase()
+            val matches=tokens.count{normalized.contains(it)}
+            // A search hit must actually match the request, not just share a site menu.
+            if(matches==0 || matches*2<tokens.size)continue
+            val path=uri.path.orEmpty()
+            val mediaLink=Regex(
+                "(?i)(/(?:watch|videos?|movies?|view_video|posts?|shorts|reels|clips|scenes|media|viewkey|embed)(?:[/?_-]|$)|\\.(?:mp4|webm|m3u8|mpd)(?:$))"
+            ).containsMatchIn(path)
+            val resultCard=container!=null
+            val offSite=uri.host?.removePrefix("www.")!=sourceHost
+            if(!mediaLink && !resultCard && !offSite)continue
+            // All configured sites, including adult/alternative ones, are eligible.
+            found.add(RankedHit(title,absolute,provider.label,description))
+            if(found.size>=250)break
         }
-        return found.take(250)
+        return found
     }
     fun searchDetailed(context:Context,keyword:String):SearchOutcome {
         require(keyword.trim().isNotBlank()){"Enter a search term"}
