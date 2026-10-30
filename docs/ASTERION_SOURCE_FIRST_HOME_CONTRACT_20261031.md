@@ -30,3 +30,12 @@ The first screen must **not** be dominated by a URL field, video search, or a ge
 - Video URLs/search remain under `renderAdd()`, not the main screen.
 
 All further UI changes must keep source-specific entry points and both sync/backfill.
+
+## v1.3.7 implementation and verification, 2026-10-31
+
+- Implemented the native 2×2 source-icon dashboard in `AsterionHomeActivity` with dedicated Pixiv, Toonily, X and Add Site panels and secondary Video URL/Search tools.
+- CI release `asterion-downloader-v1.3.7-preview-20261030` completed successfully, including preview compilation and its unit-test task. Android CI run `41144791097` passed.
+- Android emulator launch/screenshot run `41144791108` was still in progress when this status was recorded; no full visual/device QA claimed.
+- Release artifact: `https://github.com/Azrazieliz/Pixiv-downloader/releases/download/asterion-downloader-v1.3.7-preview-20261030/Asterion-Downloader-v1.3.7-Preview.apk`; SHA-256 `92a281a6613782d612e72bc30fde40c7c2660533591e1334edf98fcc1c2814ff`. **The public CI APK has a different debug signing key than the APK previously installed via PC and is not an in-place update for the existing preview.**
+- The signed update file was verified locally on the connected PC with installed-preview certificate SHA-256 `9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad` and SHA-256 `62693be30e71089944a82ce51f697e0b147ab5704e13db09ebaa7564def1efeb`. Not publicly published and not installed; ADB shows no connected Android device. Do not direct an uninstall to work around the signing mismatch, because the preview contains migrated Pixiv data.
+- Source-first UI is coded and CI verified, **NOT yet verified installed on the phone**. Source-site authentication and live Toonily Cloudflare-blocked scraping are separate functional issues.
