@@ -238,61 +238,6 @@ class AsterionHomeActivity:Activity(){
             put(body,c,10)
         }
     }
-    private fun addAccountSource(input:String){
-        val value=input.trim()
-        if(!WebDiscovery.isUrl(value)){
-            toast("Enter a full website or account URL")
-            return
-        }
-        when(SourceRouter.classify(value)){
-            DownloadKind.PIXIV->{
-                val id=SourceRouter.pixivArtistId(value)
-                if(id.isNullOrBlank()){toast("Enter a Pixiv artist profile, e.g. pixiv.net/users/123");return}
-                AppDb(this).use{it.addArtist(id)}
-                toast("Pixiv artist added; starting full archive")
-                val intent=Intent(this,SyncForegroundService::class.java).apply{
-                    action=SyncForegroundService.ACTION_START
-                    putExtra(SyncForegroundService.EXTRA_MODE,SyncMode.BACKFILL.name)
-                    putExtra(SyncForegroundService.EXTRA_TARGET_ARTIST_ID,id)
-                }
-                runCatching{startForegroundService(intent)}
-                    .onFailure{toast("Artist saved; sync could not start: ${it.message}")}
-                accountSection="Pixiv";render()
-            }
-            DownloadKind.X->{
-                val added=XPhotoQueue(this).use{it.addSource(value)}
-                if(added){XPhotoScheduler.ensure(this);XPhotoEngine.start(this)}
-                toast(if(added)"X artist followed; image backfill started" else
-                    "X account is already followed or its URL is invalid")
-                accountSection="X";render()
-            }
-            else->{
-                toast("Checking image website…")
-                Thread{
-                    val result=runCatching{
-                        val adapter=AdapterRegistry.forUrl(value)
-                        val entity=adapter.resolveEntity(value)
-                        GalleryDb(applicationContext).use{it.addEntity(entity)}
-                        entity.stableId
-                    }
-                    runOnUiThread{
-                        result.onSuccess{id->
-                            val service=Intent(this,
-                                com.azrael.galleryflow.SyncForegroundService::class.java).apply{
-                                action=com.azrael.galleryflow.SyncForegroundService.ACTION_START
-                                putExtra(com.azrael.galleryflow.SyncForegroundService.EXTRA_MODE,
-                                    com.azrael.galleryflow.SyncMode.BACKFILL.name)
-                                putExtra(com.azrael.galleryflow.SyncForegroundService.EXTRA_SITE_ID,id)
-                            }
-                            runCatching{startForegroundService(service)}
-                                .onFailure{toast("Site saved, sync launch failed: ${it.message}")}
-                            accountSection="Cosplay";render()
-                        }.onFailure{toast("Could not add image source: ${it.message}")}
-                    }
-                }.start()
-            }
-        }
-    }
     private fun renderAdd(){
         section("Video tools","Secondary tools for individual video URLs and keyword searches.")
         val byLink=card()
