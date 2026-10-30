@@ -52,6 +52,7 @@ class AsterionHomeActivity:Activity(){
         window.statusBarColor=theme.background
         window.navigationBarColor=theme.background
         ChapterRecovery.ensure(this)
+        XPhotoScheduler.ensure(this)
         root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(theme.background)}
         val head=theme.row(this).apply{setPadding(dp(14),dp(12),dp(14),dp(12))}
         head.addView(theme.brandMark(this,47),LinearLayout.LayoutParams(dp(47),dp(47)))
@@ -187,11 +188,13 @@ class AsterionHomeActivity:Activity(){
         section("Transfer queue","Persistent history across supported sources.")
         val videos=VideoDb(this).use{it.listVideos(200)}
         val comics=ChapterQueue(this).use{it.list()}
+        val xphotos=XPhotoQueue(this).use{it.recent(100)}
         val artists=AppDb(this).use{it.listArtists()}
         val galleries=GalleryDb(this).use{it.listEntities()}
         put(body,text("${videos.count{it.status=="running"||it.status=="queued"}+
-            comics.count{it.state=="working"||it.state=="queued"}} pending   •   "+
-            "${videos.count{it.status=="error"}+comics.count{it.state=="error"}} failed",
+            comics.count{it.state=="working"||it.state=="queued"}+
+            xphotos.count{it.state=="running"||it.state=="queued"}} pending   •   "+
+            "${videos.count{it.status=="error"}+comics.count{it.state=="error"}+xphotos.count{it.state=="error"}} failed",
             14f,theme.primary,true))
         val actions=theme.row(this)
         actions.addView(button("RESUME VIDEOS"){VideoEngine.launch(this,false)},
@@ -199,6 +202,19 @@ class AsterionHomeActivity:Activity(){
         actions.addView(button("RESUME ZIP"){ChapterArchives.start(this)},
             LinearLayout.LayoutParams(0,-2,1f).apply{leftMargin=dp(8)})
         put(body,actions)
+        put(body,button("RESUME X IMAGE DOWNLOADS"){XPhotoEngine.start(this)})
+        xphotos.take(35).forEach{photo->
+            val c=card()
+            put(c,text("X IMAGE · ${photo.state.uppercase()}",13f,theme.primary,true),0)
+            put(c,text(photo.photo,11f,theme.secondary))
+            if(photo.error!=null)put(c,text(photo.error,11f,theme.danger))
+            if(photo.state=="error")put(c,button("RETRY"){
+                XPhotoQueue(this).use{it.retry(photo.id)}
+                XPhotoEngine.start(this);render()
+            })
+            if(photo.saved!=null)put(c,button("OPEN"){openFile(photo.saved,"image/*")})
+            put(body,c,9)
+        }
         videos.take(70).forEach{v->
             val c=card()
             put(c,text("VIDEO  ·  ${v.status.uppercase()}  ·  ${v.progress}%",13f,theme.primary,true),0)
