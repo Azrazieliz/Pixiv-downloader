@@ -234,8 +234,10 @@ class AsterionHomeActivity:Activity(){
                 toast("Enter a valid manhwa series URL")
             }else{
                 val added=ChapterQueue(this).use{
-                    it.enqueue(address,URI(address).path.trim('/').substringBefore('/')
-                        .ifBlank{"Manhwa series"})
+                    it.enqueue(address,URI(address).path.trim('/').split('/').let{segments->
+                        if(segments.firstOrNull() in listOf("serie","series","manga","manhwa"))
+                            segments.getOrNull(1) else segments.lastOrNull()
+                    }.orEmpty().ifBlank{"Manhwa series"})
                 }
                 if(added)ChapterArchives.start(this)
                 toast(if(added)"Full-series ZIP added to queue" else "This series is already saved")
