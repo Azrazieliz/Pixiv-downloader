@@ -83,7 +83,7 @@ object VideoEngine {
                     db.update(next.id,"done",100,uri)
                     onStatus("Saved ${next.title}")
                 } catch(t:Exception) {
-                    db.update(next.id,"error",error=t.message?:t.javaClass.simpleName)
+                    db.scheduleRetry(next.id,t.message?:t.javaClass.simpleName)
                     onStatus("Failed ${next.title}")
                 }
             }
