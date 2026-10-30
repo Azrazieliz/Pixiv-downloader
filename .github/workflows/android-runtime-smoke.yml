@@ -49,12 +49,18 @@ jobs:
             adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.azrael.galleryflow.MainActivity
             sleep 3
             adb exec-out screencap -p > nocturne-gallery-ui.png
+            adb shell am start -W -n com.azrael.pixivdumpsync.nocturne/com.asterion.videoflow.MainActivity
+            sleep 3
+            adb exec-out screencap -p > nocturne-videoflow-ui.png
             adb shell pidof -s com.azrael.pixivdumpsync.nocturne | grep -Eq '[0-9]+' || { echo "Preview did not launch"; exit 1; }
             adb logcat -c
             adb shell am force-stop com.azrael.pixivdumpsync
             adb shell am start -W -n com.azrael.pixivdumpsync/.DownloaderHubActivity
             sleep 4
             adb exec-out screencap -p > asterion-downloader-hub.png
+            adb shell am start -W -n com.azrael.pixivdumpsync/com.asterion.videoflow.MainActivity
+            sleep 3
+            adb exec-out screencap -p > asterion-videoflow-ui.png
             echo "=== PID ==="
             adb shell pidof -s com.azrael.pixivdumpsync
             echo "=== CRASH BUFFER ==="
@@ -71,4 +77,6 @@ jobs:
             asterion-downloader-hub.png
             nocturne-preview-hub.png
             nocturne-gallery-ui.png
+            nocturne-videoflow-ui.png
+            asterion-videoflow-ui.png
           if-no-files-found: warn
