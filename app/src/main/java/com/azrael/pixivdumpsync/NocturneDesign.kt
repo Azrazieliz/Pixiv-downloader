@@ -12,7 +12,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 
-/** Shared visual language for Nocturne's source hub, galleries and transfers. */
+/** Shared visual language for Asterion Downloader's source hub, galleries and transfers. */
 object NocturneDesign {
     val background = Color.rgb(10, 14, 24)
     val surface = Color.rgb(20, 28, 42)
@@ -115,9 +115,9 @@ object NocturneDesign {
 
     fun brandMark(context: Context, dp: Int = 44): android.widget.ImageView =
         android.widget.ImageView(context).apply {
-            setImageResource(R.drawable.ic_nocturne_mark)
+            setImageResource(R.drawable.ic_asterion_downloader)
             scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
             layoutParams = LinearLayout.LayoutParams(px(context, dp), px(context, dp))
-            contentDescription = "Nocturne logo"
+            contentDescription = "Asterion Downloader logo"
         }
 }

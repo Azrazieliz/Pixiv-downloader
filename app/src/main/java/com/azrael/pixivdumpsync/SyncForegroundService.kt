@@ -186,7 +186,7 @@ class SyncForegroundService : Service() {
 
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("Kuroha")
+            .setContentTitle("Asterion · Kuroha")
             .setContentText(snapshot.message.take(180))
             .setContentIntent(open)
             .setOngoing(snapshot.running)

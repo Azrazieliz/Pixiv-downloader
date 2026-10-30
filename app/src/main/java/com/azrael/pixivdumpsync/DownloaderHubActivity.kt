@@ -13,7 +13,7 @@ import android.widget.TextView
 import com.azrael.galleryflow.GalleryDb
 import java.net.URI
 
-/** Branded Nocturne home: choose a workflow before entering its controls. */
+/** Asterion Downloader home: enter Kuroha, Kyora or VideoFlow in one app. */
 class DownloaderHubActivity : Activity() {
     private val design get() = NocturneDesign
     private lateinit var savedSites: LinearLayout
@@ -39,20 +39,20 @@ class DownloaderHubActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
         }
-        brand.addView(design.text(this, "A S T E R I O N", 18f, design.white, true))
-        brand.addView(design.text(this, "A PERSONAL MEDIA ARCHIVE", 10f, design.secondary, true)
+        brand.addView(design.text(this, "ASTERION", 18f, design.white, true))
+        brand.addView(design.text(this, "DOWNLOADER  /  MEDIA ARCHIVE", 10f, design.secondary, true)
             .apply { letterSpacing = .1f })
         masthead.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(masthead)
 
         val hero = design.card(this, 22).apply {
             background = design.shape(this@DownloaderHubActivity, design.soft, 24)
-            addView(design.eyebrow(this@DownloaderHubActivity, "COLLECTION CONTROL"))
+            addView(design.eyebrow(this@DownloaderHubActivity, "ONE APPLICATION  /  THREE WORKSPACES"))
             addView(design.text(this@DownloaderHubActivity,
-                "Everything worth\nkeeping, in one place.", 29f, design.white, true),
+                "Your downloads.\nOne place.", 29f, design.white, true),
                 design.lp(this@DownloaderHubActivity, 11))
             addView(design.text(this@DownloaderHubActivity,
-                 "Kuroha for Pixiv. Kyora for cosplay galleries. VideoFlow for videos.",
+                 "Pixiv artwork, cosplay galleries and videos — managed in Asterion Downloader.",
                 13f, design.secondary), design.lp(this@DownloaderHubActivity, 11, 18))
             addView(design.action(this@DownloaderHubActivity, "Add a website to Kyora", true) {
                 openGallery(add = true)

@@ -91,7 +91,7 @@ class MainActivity : Activity() {
         }
         head.addView(ui.text(this@MainActivity, "‹", 34f, ui.secondary).apply {
             gravity = Gravity.CENTER
-            contentDescription = "Back to Nocturne"
+            contentDescription = "Back to Asterion Downloader"
             setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(dp(35), dp(45)))
         head.addView(ui.brandMark(this@MainActivity, 43), LinearLayout.LayoutParams(dp(43), dp(43)))
@@ -99,7 +99,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
         }
-        words.addView(ui.text(this@MainActivity, "NOCTURNE", 17f, ui.white, true).apply {
+        words.addView(ui.text(this@MainActivity, "ASTERION", 17f, ui.white, true).apply {
             letterSpacing = .16f
         })
         words.addView(ui.text(this@MainActivity, "KYORA / COSPLAY", 10f, ui.secondary, true).apply {

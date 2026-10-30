@@ -4,6 +4,6 @@
     <string name="pixiv_download_folder">Kuroha</string>
     <string name="hub_brand_name">ASTERION / DOWNLOADER</string>
     <string name="hub_display_title">Source Library</string>
-    <string name="gallery_page_brand">KYORA / GALLERY SOURCES</string>
+    <string name="gallery_page_brand">ASTERION / KYORA</string>
     <bool name="nocturne_preview">false</bool>
 </resources>

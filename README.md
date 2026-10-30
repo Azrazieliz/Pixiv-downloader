@@ -82,3 +82,12 @@ The Android home presents Kuroha (Pixiv), Kyora (cosplay) and VideoFlow
 (video URL download and monitored source pages) in a single APK.
 VideoFlow persists its own queue and videos under Downloads/VideoFlow/;
 Pixiv/Kyora auth, databases and filters are retained.
+
+## Asterion Downloader v1.2.1 — unified visual identity
+
+Launcher icon and in-app brand mark use the same Asterion A/download insignia,
+with preserved dark slate, mint and violet visual language. The hub and Kyora,
+Kuroha and VideoFlow header/notifications display the Asterion Downloader
+parent identity while retaining each workspace name. The preview launcher name
+is `Asterion Downloader Preview`; app and archive package paths, private data,
+and signing configurations are deliberately unchanged.

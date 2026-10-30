@@ -89,7 +89,7 @@ class SyncForegroundService : Service() {
         )
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("GalleryFlow")
+            .setContentTitle("Asterion · Kyora")
             .setContentText(s.message.take(180))
             .setContentIntent(open)
             .setOngoing(s.running)
