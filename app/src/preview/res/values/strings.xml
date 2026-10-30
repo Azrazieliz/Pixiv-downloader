@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Nocturne Preview</string>
+    <string name="app_name">Asterion Downloader Preview</string>
     <string name="gallery_download_folder">NocturneGallery</string>
     <string name="pixiv_download_folder">NocturnePixiv</string>
-    <string name="hub_brand_name">NOCTURNE / PREVIEW</string>
-    <string name="hub_display_title">Your Media Vault</string>
-    <string name="gallery_page_brand">NOCTURNE / IMAGE SOURCES</string>
+    <string name="hub_brand_name">ASTERION / DOWNLOADER</string>
+    <string name="hub_display_title">Source Library</string>
+    <string name="gallery_page_brand">ASTERION / KYORA</string>
     <bool name="nocturne_preview">true</bool>
 </resources>

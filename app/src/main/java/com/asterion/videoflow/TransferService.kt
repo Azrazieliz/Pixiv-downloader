@@ -24,7 +24,7 @@ object VideoEngine {
         makeChannel(context)
         val open=PendingIntent.getActivity(context, 0, Intent(context,MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        return Notification.Builder(context,CHANNEL).setContentTitle("VideoFlow")
+        return Notification.Builder(context,CHANNEL).setContentTitle("Asterion · VideoFlow")
             .setContentText(message).setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true).setContentIntent(open).build()
     }

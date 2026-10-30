@@ -136,6 +136,10 @@ class MainActivity : Activity() {
             setPadding(dp(14), 0, 0, 0)
         }
         titles.addView(TextView(this).apply {
+            text = "ASTERION DOWNLOADER / PIXIV"
+            UiKit.body(this, 10f)
+        })
+        titles.addView(TextView(this).apply {
             text = "Kuroha"
             UiKit.title(this, 27f)
         })
