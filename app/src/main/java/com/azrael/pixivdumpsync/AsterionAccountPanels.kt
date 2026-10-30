@@ -186,8 +186,7 @@ object AsterionAccountPanels {
                 say(a,"Enter a creator or gallery website URL")
                 return@action
             }
-            action@ run {
-                Thread{
+            Thread{
                     val result=runCatching{
                         val entity=AdapterRegistry.forUrl(url).resolveEntity(url)
                         GalleryDb(a).use{it.addEntity(entity)}
@@ -201,7 +200,6 @@ object AsterionAccountPanels {
                         }.onFailure{say(a,"Cannot follow: "+it.message)}
                     }
                 }.start()
-            }
         }
         add(a,p,ui.text(a,"Followed creators & websites",19f,ui.white,true),20)
         if(entities.isEmpty())add(a,p,
