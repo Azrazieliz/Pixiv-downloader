@@ -25,7 +25,9 @@ object KeywordSources {
         val configured=preferences(context).getString("providers",null)
         if(configured!=null)return configured
         val legacy=endpoint(context)
-        return if(legacy.isBlank())"" else "searxng|$legacy"
+        return if(legacy.isNotBlank()) "searxng|$legacy" else
+            "html|https://www.bing.com/videos/search?q={query}|Bing Videos\\n" +
+            "html|https://search.brave.com/search?q={query}|Brave Search"
     }
     fun setSources(context:Context,lines:String){
         SearchRanking.parseProviders(lines) // Reject invalid values before persistence.
