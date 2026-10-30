@@ -149,15 +149,9 @@ class AsterionHomeActivity:Activity(){
                 toast("Pixiv artist added")
             }
             DownloadKind.X->{
-                if(SourceRouter.xPost(value)){
-                    val ok=VideoDb(this).use{it.addVideo(value,value)}
-                    if(ok)VideoEngine.launch(this,false)
-                    toast(if(ok)"X post queued" else "X post already recorded")
-                }else{
-                    val ok=VideoDb(this).use{it.addWatch(value,URI(value).host?:value)}
-                    if(ok)VideoEngine.launch(this,true)
-                    toast(if(ok)"X account/page added" else "Already monitoring this X page")
-                }
+                val ok=XPhotoQueue(this).use{it.addSource(value)}
+                if(ok)XPhotoEngine.start(this)
+                toast(if(ok)"X images queued" else "X account/post already saved")
             }
             DownloadKind.COMIC->{
                 val ok=ChapterQueue(this).use{it.enqueue(value,URI(value).path.takeLast(70))}
