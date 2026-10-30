@@ -13,7 +13,7 @@ data class SearchOutcome(val hits:List<RankedHit>,val checked:Int,val failures:L
 
 object SearchRanking {
     private val tracking=setOf("fbclid","gclid","ref","ref_src","source","mc_cid","mc_eid")
-    fun validUrl(value:String):Boolean = try {
+    fun validUrl(value:String):Boolean { return try {
         val uri=URI(value.trim())
         val host=uri.host?.lowercase(Locale.ROOT)?:return false
         if(uri.scheme !in setOf("http","https") || uri.userInfo!=null)return false
@@ -24,7 +24,7 @@ object SearchRanking {
             (host.startsWith("172.")&&host.split('.').getOrNull(1)?.toIntOrNull() in 16..31))
             return false
         true
-    } catch(_:Exception){false}
+    } catch(_:Exception){false} }
     fun parseProviders(lines:String):List<SearchProvider> {
         val parsed=ArrayList<SearchProvider>()
         for(raw in lines.lineSequence()){
@@ -50,7 +50,7 @@ object SearchRanking {
         require(parsed.size<=30){"Limit the configuration to 30 search sources"}
         return parsed.distinctBy{it.kind to it.url}
     }
-    fun canonicalKey(raw:String):String = try {
+    fun canonicalKey(raw:String):String { return try {
         val uri=URI(raw.trim())
         val host=uri.host?.lowercase(Locale.ROOT)?.removePrefix("www.")?:return raw.trim()
         val path=uri.rawPath.orEmpty().trimEnd('/').ifEmpty{"/"}
@@ -61,7 +61,7 @@ object SearchRanking {
         }.sorted().joinToString("&")
         "${uri.scheme?.lowercase(Locale.ROOT)}://$host$path"+
             if(filtered.isNotBlank())"?$filtered" else ""
-    }catch(_:Exception){raw.trim()}
+    }catch(_:Exception){raw.trim()} }
     fun relevance(query:String,title:String,description:String):Int {
         val q=query.trim().lowercase(Locale.ROOT)
         if(q.isEmpty())return 0
