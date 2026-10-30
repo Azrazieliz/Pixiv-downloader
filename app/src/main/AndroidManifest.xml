@@ -19,6 +19,7 @@
         <activity android:name=".FollowingActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name="com.azrael.galleryflow.MainActivity" android:exported="false" />
+        <activity android:name="com.azrael.galleryflow.SiteLoginActivity" android:exported="false" />
         <activity android:name="com.azrael.galleryflow.GalleryDetailActivity" android:exported="false" />
         <activity android:name="com.asterion.videoflow.MainActivity"
             android:exported="false" android:windowSoftInputMode="adjustResize"/>
