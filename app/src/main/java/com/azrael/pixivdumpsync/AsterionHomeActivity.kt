@@ -26,8 +26,8 @@ class AsterionHomeActivity:Activity(){
     private lateinit var root:LinearLayout
     private lateinit var body:LinearLayout
     private lateinit var scroller:ScrollView
-    private var page="Add"
-    private val pages=listOf("Add","Queue","Library","Settings")
+    private var page="Pixiv"
+    private val pages=listOf("Pixiv","Cosplay","X","Videos","Queue","Library")
     private val navButtons=linkedMapOf<String,TextView>()
     private fun dp(v:Int)=theme.px(this,v)
     private fun text(v:String,size:Float=14f,tint:Int=theme.white,bold:Boolean=false)=
@@ -61,6 +61,13 @@ class AsterionHomeActivity:Activity(){
         label.addView(text("ASTERION DOWNLOADER",19f,theme.white,true))
         label.addView(text("Save images, videos and chapters",11f,theme.secondary))
         head.addView(label,LinearLayout.LayoutParams(0,-2,1f))
+        val gear=text("SETTINGS",11f,theme.secondary,true).apply{
+            gravity=Gravity.CENTER
+            setPadding(dp(9),dp(12),dp(9),dp(12))
+            isClickable=true
+            setOnClickListener{page="Settings";render();scroller.scrollTo(0,0)}
+        }
+        head.addView(gear)
         root.addView(head)
         scroller=ScrollView(this).apply{isFillViewport=true}
         body=LinearLayout(this).apply{
@@ -71,8 +78,8 @@ class AsterionHomeActivity:Activity(){
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
         val tabs=theme.row(this).apply{setPadding(dp(5),dp(7),dp(5),dp(7));setBackgroundColor(theme.surface)}
         pages.forEach{tab->
-            val title=when(tab){"Add"->"Download";"Queue"->"Activity";"Library"->"Files";else->tab}
-            val t=text(title,13f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
+            val title=when(tab){"X"->"X ART";"Library"->"Files";else->tab}
+            val t=text(title,11f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
                 gravity=Gravity.CENTER;minHeight=dp(50)
                 isClickable=true;isFocusable=true
                 setOnClickListener{page=tab;render();scroller.scrollTo(0,0)}
@@ -95,7 +102,10 @@ class AsterionHomeActivity:Activity(){
         }
         body.removeAllViews()
         when(page){
-            "Add"->renderAdd()
+            "Pixiv"->AsterionAccountPanels.pixiv(this,body){render()}
+            "Cosplay"->AsterionAccountPanels.cosplay(this,body){render()}
+            "X"->AsterionAccountPanels.x(this,body){render()}
+            "Videos"->renderAdd()
             "Queue"->renderQueue()
             "Library"->renderLibrary()
             "Sources"->renderSources()
@@ -103,7 +113,7 @@ class AsterionHomeActivity:Activity(){
         }
     }
     private fun renderAdd(){
-        section("Save media","Paste a link or search for videos by name. Asterion chooses the downloader.")
+        section("Videos & Search","Search video providers or download a direct link. Artist and image sync are in Pixiv, Cosplay and X.")
         val byLink=card()
         put(byLink,text("1  Download from a link",18f,theme.white,true),0)
         put(byLink,text("Videos · Pixiv · X images · Galleries · Full chapter ZIPs",
@@ -195,7 +205,7 @@ class AsterionHomeActivity:Activity(){
             }
             DownloadKind.X->{
                 val ok=XPhotoQueue(this).use{it.addSource(value)}
-                if(ok)XPhotoEngine.start(this)
+                if(ok){XPhotoScheduler.ensure(this);XPhotoEngine.start(this)}
                 toast(if(ok)"X images queued" else "X account/post already saved")
             }
             DownloadKind.COMIC->{
