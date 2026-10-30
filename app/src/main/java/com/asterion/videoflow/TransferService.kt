@@ -106,6 +106,9 @@ object VideoEngine {
         parent.mkdirs()
         val template=File(parent,"%(title).160s [%(id)s].%(ext)s").absolutePath
         val prefs=context.getSharedPreferences("video_options",Context.MODE_PRIVATE)
+        val viaProxy=prefs.getBoolean("tor_proxy",false)
+        val hidden=Uri.parse(item.url).host.orEmpty().endsWith(".onion",true)
+        require(!hidden||viaProxy){"Configure a SOCKS proxy before connecting to this source"}
         val cookie=File(context.filesDir,"videoflow/cookies.txt")
         require(WebDiscovery.isUrl(item.url)){"Only public HTTP(S) video URLs are supported"}
         fun request(link:String, referer:String?=null)=
@@ -120,6 +123,7 @@ object VideoEngine {
                 .addOption("-f",prefs.getString("quality","best[ext=mp4]/best")
                     ?: "best[ext=mp4]/best")
                 .apply {
+                    if(viaProxy)addOption("--proxy", "socks5h://127.0.0.1:${prefs.getInt("tor_port",9050)}")
                     if(!referer.isNullOrBlank())addOption("--referer",referer)
                     if(cookie.isFile&&cookie.length()>0)addOption("--cookies",cookie.absolutePath)
                 }
