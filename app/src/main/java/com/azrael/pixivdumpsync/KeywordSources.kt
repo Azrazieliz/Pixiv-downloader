@@ -119,6 +119,6 @@ object KeywordSources {
             providers.size,errors)
     }
     /** Compatibility entry point for older UI and stored creator watch records. */
-    fun search(context:Context,keyword:String):List<Pair<String,String>>=
+    fun search(context:Context,keyword:String):List<Pair<String,String>> =
         searchDetailed(context,keyword).hits.map{it.title to it.url}
 }
