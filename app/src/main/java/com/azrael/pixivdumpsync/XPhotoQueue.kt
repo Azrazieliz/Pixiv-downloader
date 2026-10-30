@@ -6,6 +6,10 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import java.net.URI
 
+data class XSourceRecord(
+    val url:String,val handle:String,val cursor:String?,val enabled:Boolean,
+    val state:String,val error:String?,val updated:Long
+)
 data class XPhotoTask(val id:Long,val source:String,val photo:String,val state:String,
     val saved:String?,val attempts:Int,val error:String?)
 
@@ -37,6 +41,30 @@ class XPhotoQueue(context:Context):SQLiteOpenHelper(context,"asterion_x_photos.s
             put("url",value.trim());put("handle",handle);put("updated",System.currentTimeMillis())
         }
         return writableDatabase.insertWithOnConflict("sources",null,row,SQLiteDatabase.CONFLICT_IGNORE)>0
+    }
+    fun allSources():List<XSourceRecord> {
+        val out=ArrayList<XSourceRecord>()
+        readableDatabase.rawQuery(
+            "SELECT url,handle,cursor,state,last_error,updated FROM sources ORDER BY updated DESC",null
+        ).use{c->while(c.moveToNext()){
+            val state=c.getString(3)
+            out.add(XSourceRecord(c.getString(0),c.getString(1).orEmpty(),c.getString(2),
+                state!="disabled",state,c.getString(4),c.getLong(5)))
+        }}
+        return out
+    }
+    fun setEnabled(url:String,enabled:Boolean){
+        writableDatabase.execSQL("UPDATE sources SET state=?,updated=? WHERE url=?",
+            arrayOf(if(enabled)"queued" else "disabled",System.currentTimeMillis(),url))
+    }
+    fun backfill(url:String){
+        writableDatabase.execSQL(
+            "UPDATE sources SET cursor=NULL,state='queued',last_error=NULL,updated=? WHERE url=?",
+            arrayOf(System.currentTimeMillis(),url))
+    }
+    fun removeSource(url:String){
+        // Retain already archived photos for this source.
+        writableDatabase.delete("sources","url=?",arrayOf(url))
     }
     fun sources():List<Triple<String,String,String?>> {
         val result=ArrayList<Triple<String,String,String?>>()
