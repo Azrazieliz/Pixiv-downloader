@@ -1,6 +1,7 @@
 package com.azrael.galleryflow
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -20,12 +21,34 @@ import com.azrael.pixivdumpsync.SearchRanking
  * settings or app databases; the WebView cookie jar owns its session data.
  */
 object SiteSession {
+    private const val PREFS="asterion_site_connections"
     fun validLoginUrl(url:String):Boolean =
         SearchRanking.validUrl(url) && Uri.parse(url).scheme.equals("https",true)
     fun cookie(url:String):String? {
         if(!validLoginUrl(url))return null
         return runCatching{CookieManager.getInstance().getCookie(url)}
             .getOrNull()?.takeIf{it.isNotBlank()}
+    }
+    private fun host(url:String):String = Uri.parse(url).host.orEmpty()
+        .lowercase(java.util.Locale.ROOT).removePrefix("www.")
+    fun bound(context:Context,url:String):Boolean{
+        if(!validLoginUrl(url))return false
+        val key=host(url)
+        if(!context.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
+            .getBoolean(key,false))return false
+        val stored=cookie(url)?:return false
+        return if(key=="x.com"||key=="twitter.com")
+            stored.split(';').any{it.trim().startsWith("auth_token=")}
+        else stored.isNotBlank()
+    }
+    fun save(context:Context,url:String){
+        require(validLoginUrl(url))
+        context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
+            .putBoolean(host(url),true).apply()
+    }
+    fun disconnect(context:Context,url:String) {
+        context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
+            .remove(host(url)).apply()
     }
 }
 
@@ -71,11 +94,16 @@ class SiteLoginActivity:Activity() {
         actions.addView(ui.action(this,"SAVE CONNECTION",true){
             CookieManager.getInstance().flush()
             val cookie=SiteSession.cookie(address)
-            Toast.makeText(this,if(cookie!=null)
-                "Website cookies saved. Sync can reuse this session."
-                else "No website cookies found. The site may not have signed in.",
+            val xSite=Uri.parse(address).host.orEmpty().removePrefix("www.") in
+                setOf("x.com","twitter.com")
+            val authenticated=cookie!=null && (!xSite ||
+                cookie.split(';').any{it.trim().startsWith("auth_token=")})
+            if(authenticated)SiteSession.save(this,address)
+            Toast.makeText(this,if(authenticated)
+                "Account session saved on this device."
+                else "Sign-in not confirmed. Finish logging in before saving.",
                 Toast.LENGTH_LONG).show()
-            setResult(if(cookie!=null)RESULT_OK else RESULT_CANCELED,
+            setResult(if(authenticated)RESULT_OK else RESULT_CANCELED,
                 Intent().putExtra(EXTRA_URL,address))
             finish()
         },LinearLayout.LayoutParams(0,-2,1f))
