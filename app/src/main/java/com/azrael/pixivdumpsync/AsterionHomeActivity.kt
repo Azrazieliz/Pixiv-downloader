@@ -332,16 +332,14 @@ class AsterionHomeActivity:Activity(){
                     13f,theme.secondary))
             for(hit in hits.take(25)){
                 val c=card()
-                if(hit.thumbnail!=null){
-                    val thumbnail=ImageView(this).apply{
-                        minimumHeight=dp(124)
-                        setBackgroundColor(theme.raised)
-                        adjustViewBounds=true
-                        layoutParams=LinearLayout.LayoutParams(-1,dp(160))
-                    }
-                    put(c,thumbnail,0)
-                    VideoSearchPreviews.display(this,thumbnail,hit.thumbnail)
+                val thumbnail=ImageView(this).apply{
+                    minimumHeight=dp(124)
+                    setBackgroundColor(theme.raised)
+                    adjustViewBounds=true
+                    layoutParams=LinearLayout.LayoutParams(-1,dp(160))
                 }
+                put(c,thumbnail,0)
+                VideoSearchPreviews.display(this,thumbnail,hit.thumbnail)
                 put(c,text(hit.title,16f,theme.white,true),8)
                 put(c,text(hit.source+" · Video result",12f,theme.primary))
                 put(c,text(hit.url.take(120),11f,theme.subdued))
