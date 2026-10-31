@@ -303,6 +303,9 @@ object AsterionAccountPanels {
         action(a,summary,"SYNC ALL X ACCOUNTS",true){
             XPhotoEngine.start(a);say(a,"Checking X photo accounts")
         }
+        action(a,summary,"IMPORT ACCOUNTS I FOLLOW",false){
+            a.startActivity(Intent(a,XFollowingImportActivity::class.java))
+        }
         add(a,summary,ui.text(a,
             "Automatic checks every 15 minutes when Android allows background jobs.",
             12f,ui.secondary))
@@ -348,6 +351,26 @@ object AsterionAccountPanels {
                     XPhotoEngine.start(a)
                     say(a,"Restarted image backfill for @"+source.handle)
                     refresh()
+                })
+            pair(a,c,"RETRY ERRORS","REMOVE ARTIST",
+                {
+                    XPhotoQueue(a).use{ db->
+                        db.clearError(source.url)
+                        db.setEnabled(source.url,true)
+                        db.retryFailed(source.url)
+                    }
+                    XPhotoEngine.start(a)
+                    refresh()
+                },
+                {
+                    android.app.AlertDialog.Builder(a)
+                        .setTitle("Unfollow @"+source.handle+" in the downloader?")
+                        .setMessage("Stop monitoring this artist. Already saved images stay intact.")
+                        .setNegativeButton("Cancel",null)
+                        .setPositiveButton("Remove"){_,_->
+                            XPhotoQueue(a).use{it.removeSource(source.url)}
+                            refresh()
+                        }.show()
                 })
         }
     }
