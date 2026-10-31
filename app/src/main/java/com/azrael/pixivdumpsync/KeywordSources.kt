@@ -28,7 +28,7 @@ object KeywordSources {
         "html|https://xhamster.com/search/{query}|xHamster",
         "html|https://www.dailymotion.com/search/{query}/videos|Dailymotion",
         "html|https://www.youtube.com/results?search_query={query}|YouTube",
-        "html|https://hianime.to/search?keyword={query}|HiAnime (alternative index)"
+        "html|https://hianime.ba/search?keyword={query}|HiAnime Alternative"
     )
     private fun isOldBrowser(line:String)=
         line.contains("www.bing.com/videos/search",true) ||
