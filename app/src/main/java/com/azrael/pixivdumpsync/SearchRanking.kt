@@ -67,6 +67,7 @@ object SearchRanking {
         val path=uri.path.orEmpty().lowercase(Locale.ROOT)
         val host=uri.host.orEmpty().lowercase(Locale.ROOT)
         val query=uri.query.orEmpty().lowercase(Locale.ROOT)
+        if(isIndexPage(url))return false // Torrent detail pages are not video files.
         if(listOf("reverso.net","reverso.com","wiktionary.org","wordreference.com",
                 "dictionary.com","linguee.com","deepl.com","thesaurus.com")
                 .any{host==it||host.endsWith("."+it)})return false
