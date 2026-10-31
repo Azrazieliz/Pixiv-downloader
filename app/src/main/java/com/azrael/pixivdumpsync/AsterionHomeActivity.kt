@@ -32,6 +32,11 @@ class AsterionHomeActivity:Activity(){
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
         super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode in listOf(5201,5202,5203)) {
+            if(resultCode==RESULT_OK)
+                ResourceDownloads.onFilePicked(this,requestCode,data?.data)
+            return
+        }
         if(requestCode!=chapterSessionRequest)return
         val id=pendingChapterRetry
         pendingChapterRetry=-1L
@@ -42,7 +47,7 @@ class AsterionHomeActivity:Activity(){
         }else if(id>=0) toast("Browser connection was not saved; ZIP retry remains paused.")
         if(::body.isInitialized)render()
     }
-    private val pages=listOf("Home","X","Videos")
+    private val pages=listOf("Home","Videos","Books","Games")
     private val navButtons=linkedMapOf<String,TextView>()
     private fun dp(v:Int)=theme.px(this,v)
     private fun text(v:String,size:Float=14f,tint:Int=theme.white,bold:Boolean=false)=
@@ -96,7 +101,7 @@ class AsterionHomeActivity:Activity(){
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
         val tabs=theme.row(this).apply{setPadding(dp(5),dp(7),dp(5),dp(7));setBackgroundColor(theme.surface)}
         pages.forEach{tab->
-            val title=when(tab){"Home"->"SOURCES";"X"->"X ACCOUNTS";else->"VIDEOS"}
+            val title=when(tab){"Home"->"SOURCES";"Videos"->"VIDEOS";"Books"->"BOOKS";else->"GAMES"}
             val t=text(title,14f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
                 gravity=Gravity.CENTER;minHeight=dp(50)
                 isClickable=true;isFocusable=true
@@ -161,6 +166,8 @@ class AsterionHomeActivity:Activity(){
             "X"->AsterionAccountPanels.x(this,body){render()}
             "Site"->AsterionAccountPanels.cosplay(this,body){render()}
             "Videos"->renderAdd()
+            "Books"->ResourceDownloads.render(this,body,false)
+            "Games"->ResourceDownloads.render(this,body,true)
             "Queue"->renderQueue()
             "Library"->renderLibrary()
             "Sources"->renderSources()
@@ -367,7 +374,7 @@ class AsterionHomeActivity:Activity(){
 
         val byName=card()
         put(byName,text("Search videos by name",18f,theme.white,true),0)
-        put(byName,text("Dedicated searches for hentai, porn, or public media indexes and configured hidden sites. Torrent entries open as source pages.",
+        put(byName,text("Search anime videos, adult videos or torrent indexes; torrent results can open in a BitTorrent client.",
             12f,theme.secondary))
         val searchPrefs=getSharedPreferences("asterion_video_search",MODE_PRIVATE)
         val query=edit("Creator, title or keywords")
@@ -464,8 +471,8 @@ class AsterionHomeActivity:Activity(){
                     12f,theme.primary))
                 put(c,text(hit.url.take(120),11f,theme.subdued))
                 if(isIndex){
-                    put(c,button("OPEN INDEXED SOURCE PAGE"){
-                        startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(hit.url)))
+                    put(c,button("OPEN TORRENT SOURCE"){
+                        ResourceDownloads.openTorrentSource(this,hit.url)
                     })
                 }else if(!hit.queued){
                     put(c,button("DOWNLOAD THIS RESULT"){

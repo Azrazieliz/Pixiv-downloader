@@ -76,6 +76,9 @@ object SearchRanking {
             (path.startsWith("/hentai-videos/") || path.startsWith("/hentai/")))return true
         if(host=="hentaihaven.xxx" &&
             (path.startsWith("/watch/") || path.startsWith("/video/")))return true
+        if(host=="hentai.tv" &&
+            (path.startsWith("/episode/")||path.startsWith("/watch/")||
+             path.startsWith("/anime/")||path.startsWith("/hentai/")))return true
         if(host.contains("xvideos.com") && Regex("^/video(?:[._0-9]|/)").containsMatchIn(path))return true
         if(host.contains("pornhub.com") && path=="/view_video.php")
             return query.contains("viewkey=")
@@ -91,7 +94,10 @@ object SearchRanking {
         val uri=runCatching{URI(url)}.getOrNull()?:return false
         val host=uri.host.orEmpty().lowercase(Locale.ROOT).removePrefix("www.")
         val path=uri.path.orEmpty()
-        return (host=="nyaa.si" && Regex("^/view/\\d+/?$").matches(path)) ||
+        return (host in setOf("nyaa.si","sukebei.nyaa.si","sukebei.nyaa.net") &&
+                Regex("^/view/\\d+/?$").matches(path)) ||
+            (host in setOf("thepiratebay.org","thepiratebay10.org") &&
+                Regex("^/description/\\d+/?$").matches(path)) ||
             (host in setOf("1337x.to","1337x.st") &&
                 Regex("^/torrent/\\d+/[^/]+/?$").matches(path))
     }

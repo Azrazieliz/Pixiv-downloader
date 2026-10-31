@@ -42,6 +42,8 @@ object KeywordSources {
     /** Indexed listings are not playable video files and open as source pages. */
     private val clearnetIndexes=listOf(
         "html|https://nyaa.si/?f=0&c=0_0&q={query}|Nyaa",
+        "html|https://sukebei.nyaa.si/?page=rss&q={query}|Sukebei",
+        "html|https://thepiratebay.org/search.php?q={query}|The Pirate Bay",
         "html|https://1337x.to/search/{query}/1/|1337x"
     )
     internal fun siteDefinitions(area:VideoSearchArea)=when(area){
@@ -122,10 +124,73 @@ object KeywordSources {
         }
         return results
     }
+    /** Hanime's search catalog is JSON, not a regular HTML list. */
+    internal fun parseHanimeSearch(payload:String):List<RankedHit>{
+        val response=JSONObject(payload)
+        val value=response.opt("hits")
+        val hits=when(value){
+            is org.json.JSONArray -> value
+            is String -> org.json.JSONArray(value)
+            else -> org.json.JSONArray()
+        }
+        val found=ArrayList<RankedHit>()
+        for(i in 0 until minOf(hits.length(),200)){
+            val row=hits.optJSONObject(i)?:continue
+            val slug=row.optString("slug").trim()
+            val name=row.optString("name").ifBlank{row.optString("title")}.trim()
+            if(!slug.matches(Regex("[a-zA-Z0-9_-]{3,150}"))||name.isBlank())continue
+            found.add(RankedHit(name,"https://hanime.tv/hentai-videos/$slug",
+                "Hanime","",thumbnail=row.optString("cover_url").takeIf{it.startsWith("https://")}))
+        }
+        return found
+    }
+    private fun hanimeApi(context:Context,keyword:String):List<RankedHit>{
+        val request=JSONObject().apply{
+            put("search_text",keyword)
+            put("blacklist",org.json.JSONArray())
+            put("brands",org.json.JSONArray())
+            put("order_by","created_at_unix")
+            put("ordering","desc")
+            put("page",0)
+            put("tags",org.json.JSONArray())
+            put("tags_mode","AND")
+        }
+        val response=connection(context,"https://search.htv-services.com/")
+            .ignoreContentType(true)
+            .header("Content-Type","application/json;charset=UTF-8")
+            .requestBody(request.toString())
+            .method(org.jsoup.Connection.Method.POST)
+            .execute()
+        require(response.statusCode() in 200..299) {
+            "Hanime search endpoint returned HTTP "+response.statusCode()
+        }
+        return parseHanimeSearch(response.body())
+    }
+    private fun sukebeiRss(context:Context,url:String):List<RankedHit>{
+        val doc=connection(context,url).ignoreContentType(true).execute()
+        require(doc.statusCode() in 200..299){"Sukebei RSS HTTP "+doc.statusCode()}
+        val xml=Jsoup.parse(doc.body(),url,org.jsoup.parser.Parser.xmlParser())
+        return xml.select("item").take(200).mapNotNull { item->
+            val title=item.selectFirst("title")?.text()?.trim().orEmpty()
+            val guid=item.selectFirst("guid")?.text()?.trim().orEmpty()
+            val link=item.selectFirst("link")?.text()?.trim().orEmpty()
+            val detail=when{
+                SearchRanking.isIndexPage(guid)->guid
+                SearchRanking.isIndexPage(link)->link
+                else->null
+            }
+            if(title.isBlank()||detail==null)null else RankedHit(
+                title,detail,"Sukebei",item.selectFirst("description")?.text().orEmpty())
+        }
+    }
     private fun html(context:Context,provider:SearchProvider,keyword:String,
                      area:VideoSearchArea):List<RankedHit> {
         val encoded=URLEncoder.encode(keyword,"UTF-8")
         val url=provider.url.replace("{query}",encoded).replace("{name}",encoded)
+        if(area==VideoSearchArea.HENTAI && provider.label=="Hanime")
+            return hanimeApi(context,keyword)
+        if(area==VideoSearchArea.PIRACY_DARKWEB && provider.label=="Sukebei")
+            return sukebeiRss(context,url)
         val doc=connection(context,url).get()
         val found=ArrayList<RankedHit>()
         val selectors="li.pcVideoListItem a[href], .videoBox a[href], "+

@@ -25,6 +25,28 @@ class SearchRankingTest {
         assertTrue(hentai.none{it in porn || it in piracy})
         assertTrue(porn.none{it in piracy})
     }
+    @Test fun hentaiSpecificVideoPathsAndHanimeSearchResults(){
+        val url="https://hanime.tv/hentai-videos/example-episode-01"
+        assertTrue(SearchRanking.isVideoUrl(url))
+        assertTrue(SearchRanking.isVideoUrl(
+            "https://hentai.tv/episode/example-01/"))
+        val json="""{"hits":"[{\"slug\":\"example-episode-01\",\"name\":\"Example Episode 01\"}]"}"""
+        val results=KeywordSources.parseHanimeSearch(json)
+        assertEquals(1,results.size)
+        assertEquals(url,results.first().url)
+        assertTrue(SearchRanking.deduplicate("example episode",results).isNotEmpty())
+    }
+    @Test fun namedTorrentIndexesAreSourcePagesNotVideos(){
+        val sources=listOf(
+            "https://sukebei.nyaa.si/view/1983012",
+            "https://thepiratebay.org/description/12345",
+            "https://nyaa.si/view/1917004",
+            "https://1337x.to/torrent/9123456/example/")
+        for(url in sources){
+            assertTrue(url,SearchRanking.isIndexPage(url))
+            assertFalse(url,SearchRanking.isVideoUrl(url))
+        }
+    }
     @Test fun indexedMediaIsNeverMistakenForDownloadableVideo(){
         val nyaa="https://nyaa.si/view/1917004"
         val torrent="https://1337x.to/torrent/9123456/video-name/"

@@ -27,6 +27,11 @@
         <activity android:name="com.asterion.videoflow.MainActivity"
             android:exported="false" android:windowSoftInputMode="adjustResize"/>
         <activity android:name=".DownloaderHubActivity" android:exported="false"/>
+        <activity android:name=".OfflineVnActivity" android:exported="false" />
+        <provider android:name=".TorrentDescriptorProvider"
+            android:authorities="${applicationId}.torrent-files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <activity android:name=".AsterionHomeActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
