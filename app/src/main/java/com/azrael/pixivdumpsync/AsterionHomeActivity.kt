@@ -91,6 +91,7 @@ class AsterionHomeActivity:Activity(){
         }
         root.addView(tabs)
         setContentView(root)
+        window.decorView.systemUiVisibility=0
         when(intent?.action){
             Intent.ACTION_SEND->intent.getStringExtra(Intent.EXTRA_TEXT)?.let{submitInput(it)}
         }
@@ -137,7 +138,13 @@ class AsterionHomeActivity:Activity(){
         isClickable=true
         isFocusable=true
         contentDescription="$label. $subtitle"
-        setOnClickListener{open(target)}
+        setOnClickListener{
+            when(target){
+                "Pixiv"->startActivity(Intent(this@AsterionHomeActivity,MainActivity::class.java))
+                "Kyora"->startActivity(Intent(this@AsterionHomeActivity,com.azrael.galleryflow.MainActivity::class.java))
+                else->open(target)
+            }
+        }
         val symbol=ImageView(this@AsterionHomeActivity).apply{
             setImageResource(icon)
             imageTintList=android.content.res.ColorStateList.valueOf(tint)
@@ -176,8 +183,14 @@ class AsterionHomeActivity:Activity(){
         tileRow(
             sourceTile("X","Follow accounts · Photo sync · Backfill",
                 R.drawable.ic_source_x,theme.white,"X"),
-            sourceTile("Add Site","Cosplay & galleries · Sync · Backfill",
-                R.drawable.ic_source_site,theme.primary,"Site")
+            sourceTile("Kyora","Cosplay creators · Sync · Backfill",
+                R.drawable.ic_source_kyora,theme.violet,"Kyora")
+        )
+        tileRow(
+            sourceTile("Add Site","Bind a new website · Sign in · Backfill",
+                R.drawable.ic_source_site,theme.primary,"Site"),
+            sourceTile("Video Search","Direct sites · Videos & previews",
+                R.drawable.ic_source_video,theme.primary,"Videos")
         )
         val counts=card()
         val pixivCount=AppDb(this).use{it.listArtists().size}
