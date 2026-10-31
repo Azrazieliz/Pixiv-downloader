@@ -334,7 +334,7 @@ class AsterionHomeActivity:Activity(){
                 val c=card()
                 if(hit.thumbnail!=null){
                     val thumbnail=ImageView(this).apply{
-                        minHeight=dp(124)
+                        minimumHeight=dp(124)
                         setBackgroundColor(theme.raised)
                         adjustViewBounds=true
                         layoutParams=LinearLayout.LayoutParams(-1,dp(160))
