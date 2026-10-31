@@ -1,8 +1,10 @@
 name: Transfer tested APK for original-key signing
 
 on:
-  # Manual trigger only: unsigned CI transfer is never a release or installation.
   workflow_dispatch:
+  push:
+    branches: ["feature/asterion-unified-downloads-20261030"]
+    paths: [".github/workflows/ci-unsigned-transfer.yml"]
 
 permissions:
   contents: write
@@ -17,7 +19,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run download 41197719518 -n Asterion-Downloader-v1.2.1-Preview-APK -D "$RUNNER_TEMP/apk"
+          gh run download 41198677071 -n Asterion-Downloader-v1.2.1-Preview-APK -D "$RUNNER_TEMP/apk"
           test -s "$RUNNER_TEMP/apk/app-preview.apk"
           cp "$RUNNER_TEMP/apk/app-preview.apk" "$RUNNER_TEMP/Asterion-Downloader-v1.3.13-CI-UNSIGNED.apk"
       - name: Stage unsigned CI artifact on dedicated transfer branch
