@@ -241,31 +241,40 @@ class SyncEngine(private val context: Context) {
                 SyncControl.updateMessage(meta.title + " • " + (position + 1) + "/" + mediaItems.size)
                 db.markMediaDownloading(media)
                 try {
-                    val fresh = downloadWithRetry(files, entity, meta, media)
-                    val duplicate = db.findCompleteByHash(fresh.sha256)
-                    if (duplicate != null && files.exists(duplicate.contentUri)) {
-                        files.delete(fresh.contentUri)
-                        db.markMediaComplete(
-                            media,
-                            fresh.copy(
-                                contentUri = requireNotNull(duplicate.contentUri),
-                                filename = duplicate.filename ?: fresh.filename
-                            ),
-                            duplicateOf = duplicate.source.wireName + ":" + duplicate.mediaId
-                        )
-                        stats.mediaDeduped++
-                    } else {
-                        db.markMediaComplete(media, fresh)
-                        stats.mediaDownloaded++
-                        if (com.azrael.pixivdumpsync.NduSettings.configured(context)) {
-                            runCatching {
-                                com.azrael.pixivdumpsync.NduCloudQueue(context).use {
-                                    it.enqueue("kyora",fresh.filename,
-                                        android.net.Uri.parse(fresh.contentUri))
+                    val outcome = downloadWithRetry(files, entity, meta, media)
+                    // Commit both the original asset and all genuine archive entries.
+                    // Never treat a provider archive as an image or silently discard videos.
+                    fun commitSaved(item: MediaRef, fresh: DownloadResult) {
+                        val duplicate = db.findCompleteByHash(fresh.sha256)
+                        if (duplicate != null && files.exists(duplicate.contentUri)) {
+                            files.delete(fresh.contentUri)
+                            db.markMediaComplete(
+                                item,
+                                fresh.copy(
+                                    contentUri = requireNotNull(duplicate.contentUri),
+                                    filename = duplicate.filename ?: fresh.filename
+                                ),
+                                duplicateOf = duplicate.source.wireName + ":" + duplicate.mediaId
+                            )
+                            stats.mediaDeduped++
+                        } else {
+                            db.markMediaComplete(item, fresh)
+                            stats.mediaDownloaded++
+                            if (com.azrael.pixivdumpsync.NduSettings.configured(context)) {
+                                runCatching {
+                                    com.azrael.pixivdumpsync.NduCloudQueue(context).use {
+                                        it.enqueue("kyora", fresh.filename,
+                                            android.net.Uri.parse(fresh.contentUri))
+                                    }
                                 }
                             }
+                            flow.mediaDownloaded(entity, meta, item, fresh)
                         }
-                        flow.mediaDownloaded(entity, meta, media, fresh)
+                    }
+                    commitSaved(media, outcome.primary)
+                    for (extracted in outcome.extracted) {
+                        db.upsertMedia(entity.entityId, extracted.media)
+                        commitSaved(extracted.media, extracted.result)
                     }
                 } catch (e: HttpStatusException) {
                     allComplete = false
@@ -315,7 +324,7 @@ class SyncEngine(private val context: Context) {
     }
 
     private fun downloadWithRetry(files: MediaStoreFiles, entity: EntityRecord,
-                                  meta: GalleryMeta, media: MediaRef): DownloadResult {
+                                  meta: GalleryMeta, media: MediaRef): DownloadOutcome {
         var last: Throwable? = null
         for (attempt in 0..3) {
             if (!SyncControl.checkpoint()) throw SyncCancelledException()

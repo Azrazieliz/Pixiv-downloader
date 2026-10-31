@@ -28,10 +28,14 @@ object ChapterScraper {
     fun isSingleChapter(url:String):Boolean =
         pathChapter.containsMatchIn(URI(url).path.orEmpty())
     private fun read(url:String):Document{
-        val result=Jsoup.connect(url)
+        val connection=Jsoup.connect(url)
             .userAgent("Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/131.0")
             .timeout(30000).maxBodySize(12_000_000).followRedirects(true)
-            .ignoreHttpErrors(true).execute()
+            .ignoreHttpErrors(true)
+        com.azrael.galleryflow.SiteSession.cookie(url)?.let { requestCookie ->
+            connection.header("Cookie", requestCookie)
+        }
+        val result=connection.execute()
         val doc=result.parse()
         require(result.statusCode() in 200..299 &&
             !doc.title().contains("Just a moment",true) &&

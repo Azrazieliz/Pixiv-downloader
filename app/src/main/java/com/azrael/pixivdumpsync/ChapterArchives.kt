@@ -76,13 +76,27 @@ object ChapterArchives {
                     connectTimeout=25000;readTimeout=45000
                     setRequestProperty("User-Agent","Mozilla/5.0 (Linux; Android 16; Mobile)")
                     setRequestProperty("Referer",referer)
+                    com.azrael.galleryflow.SiteSession.cookie(url)?.let {
+                        setRequestProperty("Cookie",it)
+                    }
                 }
-                require(conn.contentType.orEmpty().startsWith("image/")){
+                val mediaType=conn.contentType.orEmpty().substringBefore(';').lowercase()
+                require(mediaType.startsWith("image/") ||
+                    mediaType=="application/octet-stream"){
                     "Image URL did not return an image: ${conn.contentType}"}
                 conn.getInputStream().buffered().use{input->
                     FileOutputStream(partial).use{output->input.copyTo(output,128*1024)}
                 }
                 require(partial.length()>128){"Image response was empty or truncated"}
+                val expected=conn.contentLengthLong
+                require(expected<=0 || expected==partial.length()){
+                    "Image response was truncated: "+partial.length()+" / "+expected
+                }
+                val options=android.graphics.BitmapFactory.Options().apply{inJustDecodeBounds=true}
+                android.graphics.BitmapFactory.decodeFile(partial.absolutePath,options)
+                require(options.outWidth>0 && options.outHeight>0){
+                    "Image response contained non-image content"
+                }
                 require(partial.renameTo(target)){"Cannot commit cached page"}
                 return
             }catch(t:Exception){
@@ -109,7 +123,8 @@ object ChapterArchives {
                             .find(image)?.groupValues?.get(1)?.lowercase()?:"jpg"
                         val page=File(cache,"%05d_%05d.%s".format(chapterIndex+1,pageIndex+1,ext))
                         if(!page.isFile||page.length()<128)download(image,chapter.url,page)
-                        val name="%05d_%s/%05d.%s".format(chapterIndex+1,
+                        // One ZIP with flat page entries; keep chapter/page numbering in filenames.
+                        val name="%05d_%s_%05d.%s".format(chapterIndex+1,
                             safeName(chapter.title),pageIndex+1,ext)
                         zip.putNextEntry(ZipEntry(name))
                         page.inputStream().buffered().use{it.copyTo(zip,128*1024)}

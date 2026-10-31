@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private var siteFilter: String? = null
     private val thumbnailPool = Executors.newFixedThreadPool(2)
     private lateinit var addressInput: EditText
+    private var requestedSiteLayout: String = "auto"
     private lateinit var status: TextView
     private lateinit var entityList: LinearLayout
     private val handler = Handler(Looper.getMainLooper())
@@ -384,6 +385,24 @@ class MainActivity : Activity() {
         entry.addView(addressInput, LinearLayout.LayoutParams(-1, dp(54)).apply {
             topMargin = dp(14)
         })
+        entry.addView(ui.text(this@MainActivity,
+            "Website structure", 14f, ui.secondary), ui.lp(this@MainActivity, 12, 7))
+        val layoutChoices = android.widget.RadioGroup(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            for ((title, mode) in listOf("Auto" to "auto", "Gallery" to "gallery_only", "Albums" to "site")) {
+                val choice = android.widget.RadioButton(this@MainActivity).apply {
+                    id = View.generateViewId()
+                    text = title
+                    textSize = 13f
+                    setTextColor(ui.white)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(ui.primary)
+                    isChecked = requestedSiteLayout == mode
+                    setOnClickListener { requestedSiteLayout = mode }
+                }
+                addView(choice, LinearLayout.LayoutParams(0, dp(48), 1f))
+            }
+        }
+        entry.addView(layoutChoices, ui.lp(this@MainActivity, 5, 2))
         entry.addView(ui.action(this@MainActivity, "Add website to Kyora", true) {
             addSite()
         }, ui.lp(this@MainActivity, 12))
@@ -391,7 +410,7 @@ class MainActivity : Activity() {
 
         section("How it works")
         panel.addView(message("Your sites, your choice",
-            "No website catalog is preloaded. Paste a public website, gallery or album URL above to add it as a separate source."))
+            "Select Gallery for a flat image feed, Albums for multi-gallery websites, or Auto to detect the page structure. Each source remembers its mode. Original Kyora adapters are recognized automatically."))
         panel.addView(ui.text(this@MainActivity,
             "For example, paste a PornPics gallery URL when you choose to add that site.",
             12f, ui.subdued), ui.lp(this@MainActivity, 12))
@@ -408,12 +427,19 @@ class MainActivity : Activity() {
             return
         }
         Toast.makeText(this, "Checking source...", Toast.LENGTH_SHORT).show()
+        val layout = requestedSiteLayout
         Thread {
             val result = runCatching {
                 val adapter = AdapterRegistry.forUrl(raw)
                 if (!adapter.enabled) throw AdapterException(adapter.statusLabel)
-                adapter.resolveEntity(raw).also {
-                    GalleryDb(this).use { db -> db.addEntity(it) }
+                adapter.resolveEntity(raw).let { discovered ->
+                    // Keep each canonical site-specific adapter's own source semantics.
+                    // The saved kind controls GenericSiteAdapter enumeration on future syncs.
+                    val configured = if (adapter.source == SourceId.GENERIC)
+                        discovered.copy(kind = if (layout == "auto") discovered.kind else layout)
+                    else discovered
+                    GalleryDb(this).use { db -> db.addEntity(configured) }
+                    configured
                 }
             }
             runOnUiThread {

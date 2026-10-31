@@ -241,6 +241,15 @@ class AsterionHomeActivity:Activity(){
             toast(if(added)"Series ZIP queued" else "Series is already in downloads")
             render()
         })
+        put(inputCard,button("CONNECT TOONILY ACCOUNT / SOLVE SITE CHALLENGE"){
+            val raw=input.text.toString().trim()
+            val address=if(raw.isBlank())"https://toonily.com/" else raw
+            if(!com.azrael.galleryflow.SiteSession.validLoginUrl(address)){
+                toast("Enter a valid HTTPS source");return@button
+            }
+            startActivity(Intent(this,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,address))
+        })
         put(body,inputCard,12)
         section("Series downloads","Progress and site-specific access errors are shown here.")
         val jobs=ChapterQueue(this).use{it.list().take(25)}

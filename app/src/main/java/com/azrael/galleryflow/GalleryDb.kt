@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 
-class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 4) {
+class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE entities(
             source TEXT NOT NULL,
@@ -87,6 +87,14 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
             db.execSQL("""
                 UPDATE entities SET archived=1, selected=0, live_enabled=0
                 WHERE source NOT IN ('kiutaku','generic')
+            """.trimIndent())
+        }
+        if (oldVersion < 5) {
+            // Unhide preserved records from the original Kyora providers.
+            // Do not automatically re-enable background downloads.
+            db.execSQL("""
+                UPDATE entities SET archived=0
+                WHERE source IN ('4khd','buondua','cosplaytele','4kgirl','everia')
             """.trimIndent())
         }
     }
