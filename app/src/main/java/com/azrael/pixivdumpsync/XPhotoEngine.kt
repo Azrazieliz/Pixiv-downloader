@@ -18,7 +18,7 @@ object XPhotoEngine {
     private val executor=Executors.newSingleThreadExecutor()
     private const val CHANNEL="asterion_x_images"
     private fun json(url:String):JSONObject {
-        val response=Jsoup.connect(url).ignoreContentType(true)
+        val response=Jsoup.connect(url).ignoreContentType(true).ignoreHttpErrors(true)
             .timeout(30000).maxBodySize(12_000_000).execute()
         val value=JSONObject(response.body())
         // FxTwitter explicitly reports an empty media timeline with HTTP 404
