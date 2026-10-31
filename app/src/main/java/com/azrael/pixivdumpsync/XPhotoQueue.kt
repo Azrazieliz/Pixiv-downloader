@@ -62,6 +62,20 @@ class XPhotoQueue(context:Context):SQLiteOpenHelper(context,"asterion_x_photos.s
             "UPDATE sources SET cursor=NULL,state='queued',last_error=NULL,updated=? WHERE url=?",
             arrayOf(System.currentTimeMillis(),url))
     }
+    fun clearError(url:String) {
+        writableDatabase.execSQL(
+            "UPDATE sources SET last_error=NULL, updated=? WHERE url=?",
+            arrayOf(System.currentTimeMillis(),url)
+        )
+    }
+    fun retryFailed(url:String):Int {
+        val values=ContentValues().apply{
+            put("status","queued");putNull("error")
+            put("updated",System.currentTimeMillis())
+        }
+        return writableDatabase.update("photos",values,
+            "source=? AND status='error'",arrayOf(url))
+    }
     fun removeSource(url:String){
         // Retain already archived photos for this source.
         writableDatabase.delete("sources","url=?",arrayOf(url))
