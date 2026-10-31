@@ -8,7 +8,7 @@ import java.util.Locale
 enum class SearchProviderKind { SEARXNG, HTML }
 data class SearchProvider(val kind:SearchProviderKind,val url:String,val label:String)
 data class RankedHit(val title:String,val url:String,val source:String,
-    val description:String="",val score:Int=0)
+    val description:String="",val score:Int=0,val thumbnail:String?=null)
 data class SearchOutcome(val hits:List<RankedHit>,val checked:Int,val failures:List<String>)
 
 object SearchRanking {
@@ -62,23 +62,43 @@ object SearchRanking {
         "${uri.scheme?.lowercase(Locale.ROOT)}://$host$path"+
             if(filtered.isNotBlank())"?$filtered" else ""
     }catch(_:Exception){raw.trim()} }
+    /** Search results are video pages, not browser searches, profiles or categories. */
+    fun isVideoUrl(url:String):Boolean {
+        val uri=runCatching{URI(url)}.getOrNull()?:return false
+        val path=uri.path.orEmpty().lowercase(Locale.ROOT)
+        val host=uri.host.orEmpty().lowercase(Locale.ROOT)
+        val query=uri.query.orEmpty().lowercase(Locale.ROOT)
+        if(path.matches(Regex("(?i).*/(?:search|category|categories|tag|tags|user|users|channel|channels|playlist|playlists)(?:/.*)?$")))return false
+        if(host.contains("pornhub.com") && path=="/view_video.php")
+            return query.contains("viewkey=")
+        if(host.contains("youtube.com")&&path=="/watch")
+            return query.contains("v=")
+        if(host=="youtu.be")return path.length>2
+        if(host.contains("vimeo.com")&&Regex("^/\\d+").containsMatchIn(path))return true
+        return Regex("(?i)(/(?:watch|watch-video|watching|video|videos|view_video|viewkey|movie|movies|shorts|reel|reels|clip|clips|scene|scenes|embed|post|posts)(?:[/_-]|$)|\\.(?:mp4|webm|m3u8|mpd)$)")
+            .containsMatchIn(path)
+    }
+    /** Require most user terms in the title; descriptions cannot rescue junk titles. */
     fun relevance(query:String,title:String,description:String):Int {
-        val q=query.trim().lowercase(Locale.ROOT)
-        if(q.isEmpty())return 0
-        val words=q.split(Regex("\\s+")).filter{it.isNotBlank()}
-        val head=title.lowercase(Locale.ROOT)
+        val words=query.trim().lowercase(Locale.ROOT).split(Regex("\\s+"))
+            .filter{it.length>1}.distinct()
+        if(words.isEmpty())return 0
+        val head=title.lowercase(Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]+")," ")
         val body=description.lowercase(Locale.ROOT)
-        var score=if(head.contains(q))100 else 0
-        score+=if(body.contains(q))30 else 0
-        score+=words.count{head.contains(it)}*17
-        score+=words.count{body.contains(it)}*5
-        return score
+        val titleMatches=words.count{head.contains(it)}
+        val required=when(words.size){1->1;2->2;else->(words.size*0.75).toInt().coerceAtLeast(2)}
+        if(titleMatches<required)return 0
+        val phrase=query.trim().lowercase(Locale.ROOT)
+        return titleMatches*30+
+            (if(head.contains(phrase))150 else 0)+
+            words.count{body.contains(it)}*3
     }
     fun deduplicate(query:String,hits:List<RankedHit>):List<RankedHit> {
         val unique=linkedMapOf<String,RankedHit>()
         for(hit in hits){
-            if(!validUrl(hit.url))continue
+            if(!validUrl(hit.url)||!isVideoUrl(hit.url))continue
             val normalized=hit.copy(score=relevance(query,hit.title,hit.description))
+            if(normalized.score==0)continue
             val key=canonicalKey(hit.url)
             val previous=unique[key]
             if(previous==null || normalized.score>previous.score)unique[key]=normalized
