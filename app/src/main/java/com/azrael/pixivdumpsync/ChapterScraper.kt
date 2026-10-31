@@ -1,5 +1,7 @@
 package com.azrael.pixivdumpsync
 
+import android.content.Context
+import android.webkit.WebSettings
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.net.URI
@@ -27,10 +29,15 @@ object ChapterScraper {
             }.thenBy{it.title.lowercase(Locale.ROOT)}.thenBy{it.url})
     fun isSingleChapter(url:String):Boolean =
         pathChapter.containsMatchIn(URI(url).path.orEmpty())
-    private fun read(url:String):Document{
+    private fun read(url:String,context:Context?=null):Document{
+        val agent=context?.let{runCatching{WebSettings.getDefaultUserAgent(it)}
+            .getOrNull()}?.takeIf{it.isNotBlank()}
+            ?: "Mozilla/5.0 (Linux; Android 17; Mobile) AppleWebKit/537.36 Chrome/131.0"
         val connection=Jsoup.connect(url)
-            .userAgent("Mozilla/5.0 (Linux; Android 16; Mobile) AppleWebKit/537.36 Chrome/131.0")
-            .timeout(30000).maxBodySize(12_000_000).followRedirects(true)
+            .userAgent(agent)
+            .header("Accept","text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language","en-US,en;q=0.9")
+            .timeout(30000).maxBodySize(16_000_000).followRedirects(true)
             .ignoreHttpErrors(true)
         com.azrael.galleryflow.SiteSession.cookie(url)?.let { requestCookie ->
             connection.header("Cookie", requestCookie)
@@ -55,22 +62,27 @@ object ChapterScraper {
             ?.groupValues?.get(1)?.replace('_','.')?.toDoubleOrNull()
         return if(num!=null) "Chapter "+num.toString().removeSuffix(".0") else label.ifBlank{"Chapter"}
     }
-    fun chapters(seriesUrl:String):List<ChapterLink>{
+    fun chapters(seriesUrl:String,context:Context?=null):List<ChapterLink>{
         require(allowed(seriesUrl)){"Provide an HTTP(S) chapter or series URL"}
         if(isSingleChapter(seriesUrl))
             return listOf(ChapterLink(seriesUrl,"Chapter "+
                 (pathChapter.find(URI(seriesUrl).path.orEmpty())
                     ?.groupValues?.get(1)?.replace('_','.')?:"1")))
-        val base=URI(seriesUrl)
+        // The old /series/ URL redirects to /serie/ on Toonily; use
+        // the resolved canonical URL for the prefix, not the user's old link.
+        val initial=read(seriesUrl,context)
+        val base=URI(initial.location())
         val prefix=base.path.orEmpty().trimEnd('/')+"/"
         val root=base.host?.removePrefix("www.")
         val collected=linkedMapOf<String,ChapterLink>()
-        var next:String?=seriesUrl
+        var next:String?=initial.location()
+        var first:Document?=initial
         val visited=mutableSetOf<String>()
         while(next!=null){
             if(!visited.add(clean(next)))break
             require(visited.size<=150){"Over 150 index pages; cannot establish full chapter list"}
-            val doc=read(next)
+            val doc=first ?: read(next,context)
+            first=null
             for(a in doc.select("a[href], option[value]")){
                 val href=if(a.tagName()=="option")a.attr("value")else a.attr("href")
                 val link=runCatching{URI(doc.location()).resolve(href).toString()}
@@ -100,12 +112,14 @@ object ChapterScraper {
     }
     fun parsePageImages(doc:Document):List<String>{
         val nodes=doc.select(".reading-content img, .chapter-content img, #reader img, "+
-            ".page-chapter img, .container-chapter-reader img, img.wp-manga-chapter-img, "+
+            ".page-chapter img, .container-chapter-reader img, #readerarea img, "+
+            ".chapter-images img, img.wp-manga-chapter-img, "+
             "img[data-original], img[data-src], img[data-lazy-src]")
         val fallback=if(nodes.isEmpty())doc.select("article img, main img")else nodes
         val urls=linkedSetOf<String>()
         for(node in fallback){
-            val raw=listOf("data-original","data-src","data-lazy-src","data-full","src")
+            val raw=listOf("data-original","data-src","data-lazy-src",
+                "data-lazy","data-full","data-cfsrc","src")
                 .map{node.attr(it)}.firstOrNull{
                     it.isNotBlank() && !it.startsWith("data:") && !it.startsWith("blob:")
                 }?:node.attr("srcset").split(',').lastOrNull()?.trim()?.substringBefore(' ')
@@ -118,8 +132,8 @@ object ChapterScraper {
         }
         return urls.toList()
     }
-    fun pageImages(chapterUrl:String):List<String>{
-        val images=parsePageImages(read(chapterUrl))
+    fun pageImages(chapterUrl:String,context:Context?=null):List<String>{
+        val images=parsePageImages(read(chapterUrl,context))
         require(images.isNotEmpty()){"No readable chapter images at $chapterUrl"}
         return images
     }

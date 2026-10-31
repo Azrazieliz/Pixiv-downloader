@@ -32,6 +32,26 @@ class ChapterScraperTest {
             "https://reader.example/chapter/page-02.webp"),
             ChapterScraper.parsePageImages(doc))
     }
+    @Test fun mangaReadReaderAreaPreservesPagesInOrder(){
+        val html="""<main><div id="readerarea">
+          <img data-original="https://cdn.mangaread.org/pages/01.webp" src="/loading.gif"/>
+          <img data-cfsrc="/pages/02.png" src="/loading.gif"/>
+          <img src="/pages/03.jpg"/>
+        </div></main>"""
+        val doc=Jsoup.parse(html,"https://www.mangaread.org/manga/reader/chapter-1/")
+        assertEquals(listOf("https://cdn.mangaread.org/pages/01.webp",
+            "https://www.mangaread.org/pages/02.png",
+            "https://www.mangaread.org/pages/03.jpg"),
+            ChapterScraper.parsePageImages(doc))
+        assertTrue(ChapterScraper.isSingleChapter(
+            "https://www.mangaread.org/manga/reader/chapter-1/"))
+    }
+    @Test fun mangaReadSeriesGetsComicsRouting(){
+        assertEquals(DownloadKind.COMIC,SourceRouter.classify(
+            "https://www.mangaread.org/manga/reader/"))
+        assertEquals(DownloadKind.COMIC,SourceRouter.classify(
+            "https://toonily.com/serie/beginning-after-end/"))
+    }
     @Test fun doesNotConfuseSeriesSlugWithChapterNumber(){
         assertEquals(12.5,ChapterScraper.naturalKey("Chapter 12.5"),0.001)
         assertEquals(Double.MAX_VALUE,ChapterScraper.naturalKey("Moby Dick 17bba228"),0.001)

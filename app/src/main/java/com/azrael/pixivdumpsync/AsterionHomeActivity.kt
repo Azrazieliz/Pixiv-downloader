@@ -27,6 +27,21 @@ class AsterionHomeActivity:Activity(){
     private lateinit var body:LinearLayout
     private lateinit var scroller:ScrollView
     private var page="Home"
+    private var pendingChapterRetry:Long=-1L
+    private val chapterSessionRequest=418
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
+        super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode!=chapterSessionRequest)return
+        val id=pendingChapterRetry
+        pendingChapterRetry=-1L
+        if(resultCode==RESULT_OK && id>=0){
+            ChapterQueue(this).use{it.retry(id)}
+            ChapterArchives.start(this)
+            toast("Saved browser session. Retrying the chapter ZIP.")
+        }else if(id>=0) toast("Browser connection was not saved; ZIP retry remains paused.")
+        if(::body.isInitialized)render()
+    }
     private val pages=listOf("Home","X","Videos")
     private val navButtons=linkedMapOf<String,TextView>()
     private fun dp(v:Int)=theme.px(this,v)
@@ -256,11 +271,11 @@ class AsterionHomeActivity:Activity(){
         put(body,tools,16)
     }
     private fun renderToonily(){
-        section("Toonily · Manhwa to ZIP",
-            "Download every accessible chapter and image as one archive in reading order.")
+        section("Comics · Toonily / MangaRead",
+            "Archive accessible Toonily or MangaRead chapters into one flat, ordered ZIP.")
         val inputCard=card()
         put(inputCard,text("Full series download",18f,theme.white,true),0)
-        put(inputCard,text("Paste a Toonily series link or supported manhwa website. All discovered chapters are archived in ascending order, including fractional chapters.",
+        put(inputCard,text("Paste a Toonily or mangaread.org manga series URL. Chapter order and decimal chapters are preserved.",
             12f,theme.secondary))
         val input=edit("https://toonily.com/serie/...")
         put(inputCard,input)
@@ -277,7 +292,7 @@ class AsterionHomeActivity:Activity(){
             toast(if(added)"Series ZIP queued" else "Series is already in downloads")
             render()
         })
-        put(inputCard,button("CONNECT TOONILY ACCOUNT / SOLVE SITE CHALLENGE"){
+        put(inputCard,button("OPEN SOURCE IN BROWSER / SAVE SESSION"){
             val raw=input.text.toString().trim()
             val address=if(raw.isBlank())"https://toonily.com/" else raw
             if(!com.azrael.galleryflow.SiteSession.validLoginUrl(address)){
@@ -285,6 +300,9 @@ class AsterionHomeActivity:Activity(){
             }
             startActivity(Intent(this,com.azrael.galleryflow.SiteLoginActivity::class.java)
                 .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,address))
+        })
+        put(inputCard,button("OPEN MANGAREAD"){
+            startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://www.mangaread.org/")))
         })
         put(body,inputCard,12)
         section("Series downloads","Progress and site-specific access errors are shown here.")
@@ -297,11 +315,23 @@ class AsterionHomeActivity:Activity(){
                 job.attempts+" attempt(s)",12f,theme.secondary))
             if(!job.error.isNullOrBlank())
                 put(c,text(job.error.take(330),12f,theme.danger))
-            if(job.state=="error")put(c,button("RETRY ZIP"){
-                ChapterQueue(this).use{it.retry(job.id)}
-                ChapterArchives.start(this)
-                render()
-            })
+            if(job.state=="error"){
+                put(c,button("RETRY ZIP"){
+                    ChapterQueue(this).use{it.retry(job.id)}
+                    ChapterArchives.start(this)
+                    render()
+                })
+                if(job.error.orEmpty().contains("403") ||
+                    job.error.orEmpty().contains("browser verification",true)){
+                    put(c,button("OPEN SOURCE BROWSER & RETRY"){
+                        pendingChapterRetry=job.id
+                        startActivityForResult(
+                            Intent(this,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                                .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,job.url),
+                            chapterSessionRequest)
+                    })
+                }
+            }
             if(job.state=="done" && !job.savedUri.isNullOrBlank())
                 put(c,text("ZIP saved to Downloads / AsterionDownloader / Comics",
                     12f,theme.primary))
@@ -328,12 +358,35 @@ class AsterionHomeActivity:Activity(){
 
         val byName=card()
         put(byName,text("Search videos by name",18f,theme.white,true),0)
-        put(byName,text("Search all saved sources. Review the matches and choose what to download.",
+        put(byName,text("Choose a section of the internet. Search only sites in that category; no provider configuration.",
             12f,theme.secondary))
         val searchPrefs=getSharedPreferences("asterion_video_search",MODE_PRIVATE)
         val query=edit("Creator, title or keywords")
         query.setText(searchPrefs.getString("last_query",""))
         put(byName,query)
+        put(byName,text("SEARCH AREA",12f,theme.secondary,true),9)
+        val scopes=listOf(
+            "All sites" to VideoSearchArea.ALL,
+            "Mainstream" to VideoSearchArea.GENERAL,
+            "Adult" to VideoSearchArea.ADULT,
+            "Saved sites" to VideoSearchArea.SAVED,
+            "Tor / hidden" to VideoSearchArea.HIDDEN
+        )
+        val activeArea=text("Selected: "+searchPrefs.getString("area","ALL"),12f,theme.primary)
+        put(byName,activeArea,3)
+        for(group in scopes.chunked(3)){
+            val r=theme.row(this)
+            group.forEachIndexed { index,pair ->
+                val b=button(pair.first) {
+                    searchPrefs.edit().putString("area",pair.second.name).apply()
+                    activeArea.text="Selected: "+pair.first
+                }
+                r.addView(b,LinearLayout.LayoutParams(0,-2,1f).apply{
+                    if(index>0)leftMargin=dp(5)
+                })
+            }
+            put(byName,r,6)
+        }
         val follow=CheckBox(this).apply{
             text="Keep checking for new videos"
             setTextColor(theme.secondary)
@@ -348,7 +401,10 @@ class AsterionHomeActivity:Activity(){
             if(follow.isChecked)NameWatchDb(this).use{it.add(value)}
             toast("Searching your saved video sources…")
             Thread {
-                val outcome=runCatching{KeywordSources.searchDetailed(applicationContext,value)}
+                val outcome=runCatching{KeywordSources.searchDetailed(applicationContext,value,
+                    runCatching{VideoSearchArea.valueOf(
+                        searchPrefs.getString("area","ALL") ?: "ALL")}
+                        .getOrDefault(VideoSearchArea.ALL))}
                 outcome.onSuccess { result->
                     SearchResultsDb(applicationContext).use{it.save(value,result.hits)}
                     val failures=result.failures.take(5).joinToString(" | ")

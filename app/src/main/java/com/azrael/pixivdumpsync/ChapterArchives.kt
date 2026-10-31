@@ -69,19 +69,24 @@ object ChapterArchives {
     }
     private fun safeName(value:String):String=value.replace(
         Regex("[^\\p{L}\\p{N} ._-]"),"_").take(85).ifBlank{"Archive"}
-    private fun download(url:String,referer:String,target:File){
+    private fun download(context:Context,url:String,referer:String,target:File){
         val partial=File(target.parentFile,target.name+".part")
         var cause:Exception?=null
         repeat(4){attempt->
             try{
                 val conn=URL(url).openConnection().apply{
                     connectTimeout=25000;readTimeout=45000
-                    setRequestProperty("User-Agent","Mozilla/5.0 (Linux; Android 16; Mobile)")
+                    setRequestProperty("User-Agent",
+                        runCatching{android.webkit.WebSettings.getDefaultUserAgent(context)}
+                            .getOrDefault(
+                            "Mozilla/5.0 (Linux; Android 17; Mobile) AppleWebKit/537.36"))
                     setRequestProperty("Referer",referer)
                     com.azrael.galleryflow.SiteSession.cookie(url)?.let {
                         setRequestProperty("Cookie",it)
                     }
                 }
+                if(conn is java.net.HttpURLConnection && conn.responseCode==403)
+                    throw IllegalStateException("Image host HTTP 403: open the chapter in its site browser and save your session before retrying.")
                 val mediaType=conn.contentType.orEmpty().substringBefore(';').lowercase()
                 require(mediaType.startsWith("image/") ||
                     mediaType=="application/octet-stream"){
@@ -113,18 +118,18 @@ object ChapterArchives {
             ?:error("External app storage is unavailable")
         val cache=File(base,"chapter-cache/${task.id}")
         require(cache.isDirectory||cache.mkdirs()){"Unable to create page cache"}
-        val chapters=ChapterScraper.chapters(task.url)
+        val chapters=ChapterScraper.chapters(task.url,context)
         require(chapters.isNotEmpty()){"No chapters discovered"}
         val out=File(cache,"complete.zip.part")
         try{
             ZipOutputStream(FileOutputStream(out)).use{zip->
                 for((chapterIndex,chapter) in chapters.withIndex()){
-                    val images=ChapterScraper.pageImages(chapter.url)
+                    val images=ChapterScraper.pageImages(chapter.url,context)
                     for((pageIndex,image) in images.withIndex()){
                         val ext=Regex("(?i)\\.(jpe?g|png|webp|gif|avif)([?#]|$)")
                             .find(image)?.groupValues?.get(1)?.lowercase()?:"jpg"
                         val page=File(cache,"%05d_%05d.%s".format(chapterIndex+1,pageIndex+1,ext))
-                        if(!page.isFile||page.length()<128)download(image,chapter.url,page)
+                        if(!page.isFile||page.length()<128)download(context,image,chapter.url,page)
                         // One ZIP with flat page entries; keep chapter/page numbering in filenames.
                         val name="%05d_%s_%05d.%s".format(chapterIndex+1,
                             safeName(chapter.title),pageIndex+1,ext)
