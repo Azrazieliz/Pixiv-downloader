@@ -43,3 +43,14 @@ f6dcdbeb817cfb093997ad9cbb4a69a3dd71fd7ff4b50a5d1f1218ddcab7d5f0
 - Three separate search areas: Hentai, Porn, Piracy / Darkweb; requires actual site accessibility and authorized access.
 - Browser-authenticated downloads are supported without bypassing third-party payment or DRM controls.
 
+
+## v1.3.17-preview — 2026-10-31
+- Installer: `Asterion-Downloader-v1.3.17-Preserve-Data.apk`
+- Package: `com.azrael.pixivdumpsync.nocturne` · version code `46`
+- Signing certificate SHA-256: `9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad`
+- APK SHA-256: `
+1804e711e62ac375f237064fe01b9af0bb6af73953ad569ad555e1e3765427ed
+`
+- Books and games tabs, original X source tile, torrent descriptor/magnet handoff, Hanime search fallback, HTML5 VN ZIP support, external game export.
+- External Android runtimes required for engine-specific titles; full Windows-to-Android conversion, embedded BitTorrent peer transfer and third-party DRM/payment bypass not implemented.
+
