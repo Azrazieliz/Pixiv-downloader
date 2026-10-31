@@ -21,13 +21,30 @@ object KeywordSources {
     fun setEndpoint(context:Context,address:String){
         preferences(context).edit().putString("searxng",address.trim()).apply()
     }
+    /** Search video websites directly; never substitute a search-engine results page. */
+    private val builtInSites=listOf(
+        "html|https://www.pornhub.com/video/search?search={query}|Pornhub",
+        "html|https://www.xvideos.com/?k={query}|XVideos",
+        "html|https://xhamster.com/search/{query}|xHamster",
+        "html|https://www.dailymotion.com/search/{query}/videos|Dailymotion",
+        "html|https://www.youtube.com/results?search_query={query}|YouTube",
+        "html|https://hianime.to/search?keyword={query}|HiAnime (alternative index)"
+    )
+    private fun isOldBrowser(line:String)=
+        line.contains("www.bing.com/videos/search",true) ||
+        line.contains("search.brave.com/search",true)
     fun sources(context:Context):String {
         val configured=preferences(context).getString("providers",null)
         if(configured!=null)return configured
         val legacy=endpoint(context)
-        return if(legacy.isNotBlank()) "searxng|$legacy" else
-            "html|https://www.bing.com/videos/search?q={query}|Bing Videos\n" +
-            "html|https://search.brave.com/search?q={query}|Brave Search"
+        return if(legacy.isNotBlank()) "searxng|$legacy" else builtInSites.joinToString("\n")
+    }
+    private fun searchProviders(context:Context):List<SearchProvider> {
+        val saved=SearchRanking.parseProviders(sources(context)).filterNot{
+            isOldBrowser(it.url)
+        }
+        val direct=SearchRanking.parseProviders(builtInSites.joinToString("\n"))
+        return (direct+saved).distinctBy{it.url}.take(30)
     }
     fun setSources(context:Context,lines:String){
         SearchRanking.parseProviders(lines) // Reject invalid values before persistence.
@@ -79,54 +96,47 @@ object KeywordSources {
         val url=provider.url.replace("{query}",encoded).replace("{name}",encoded)
         val doc=connection(context,url).get()
         val found=ArrayList<RankedHit>()
-        val tokens=keyword.trim().lowercase().split(Regex("\\s+"))
-            .filter{it.isNotBlank()}
-        val selectors="article a[href], .search-result a[href], .result a[href], "+
-            ".video a[href], .thumb a[href], .item a[href], "+
-            "[class*=video] a[href], [class*=result] a[href], a[href]"
-        val sourceHost=URI(doc.location()).host.orEmpty().removePrefix("www.")
-        for(node in doc.select(selectors).take(1600)){
-            if(node.closest("header, footer, nav, aside, .menu, .sidebar, .navigation")!=null)
-                continue
+        val selectors="li.pcVideoListItem a[href], .videoBox a[href], "+
+            ".thumb-block a[href], [class*=video-thumb] a[href], "+
+            "[class*=video-card] a[href], [class*=thumb] a[href], "+
+            "[class*=video] a[href], article a[href], a[href]"
+        for(node in doc.select(selectors).take(2000)){
+            if(node.closest("header,footer,nav,aside,.menu,.sidebar,.navigation")!=null)continue
             val absolute=runCatching{
                 URI(doc.location()).resolve(node.attr("href")).toString()
             }.getOrNull()?:continue
-            if(!SearchRanking.validUrl(absolute))continue
-            val uri=URI(absolute)
-            if(uri.path.orEmpty().trimEnd('/')==
-                URI(doc.location()).path.orEmpty().trimEnd('/') &&
-                uri.host==URI(doc.location()).host)continue
-            if(Regex("(?i)(/(?:search|searches|category|categories|tags?|help|login|signup|privacy|terms)(?:[/?#]|$))")
-                .containsMatchIn(uri.path.orEmpty()))continue
+            if(!SearchRanking.validUrl(absolute) ||
+                !SearchRanking.isVideoUrl(absolute))continue
             val container=node.closest(
-                "article, .search-result, .result, .video, .thumb, .item, "+
-                "[class*=result], [class*=video]")
-            val title=node.attr("title").ifBlank{node.text().trim()}
-                .ifBlank{node.selectFirst("img[alt]")?.attr("alt").orEmpty()}
-                .ifBlank{container?.selectFirst("img[alt]")?.attr("alt").orEmpty()}
-                .take(220)
-            if(title.length<4)continue
-            val description=container?.text().orEmpty().take(300)
-            val normalized=(title+" "+description).lowercase()
-            val matches=tokens.count{normalized.contains(it)}
-            // A search hit must actually match the request, not just share a site menu.
-            if(matches==0 || matches*2<tokens.size)continue
-            val path=uri.path.orEmpty()
-            val mediaLink=Regex(
-                "(?i)(/(?:watch|videos?|movies?|view_video|posts?|shorts|reels|clips|scenes|media|viewkey|embed)(?:[/?_-]|$)|\\.(?:mp4|webm|m3u8|mpd)(?:$))"
-            ).containsMatchIn(path)
-            val resultCard=container!=null
-            val offSite=uri.host?.removePrefix("www.")!=sourceHost
-            if(!mediaLink && !resultCard && !offSite)continue
-            // All configured sites, including adult/alternative ones, are eligible.
-            found.add(RankedHit(title,absolute,provider.label,description))
+                "li.pcVideoListItem, .videoBox, .thumb-block, "+
+                "[class*=video-thumb], [class*=video-card], article, "+
+                "[class*=thumb], [class*=video]")
+            val image=(node.selectFirst("img")?:container?.selectFirst("img"))
+            val title=listOf(
+                node.attr("title"),node.attr("aria-label"),
+                container?.selectFirst("h3,h2,[class*=title]")?.text().orEmpty(),
+                image?.attr("alt").orEmpty(),node.text(),
+                container?.attr("title").orEmpty()
+            ).firstOrNull{it.trim().length>=5}.orEmpty().trim().take(220)
+            if(title.isBlank())continue
+            val description=container?.text().orEmpty().take(500)
+            if(SearchRanking.relevance(keyword,title,description)==0)continue
+            val thumb=image?.let{img->
+                listOf("data-thumb","data-thumb_url","data-preview",
+                    "data-original","data-src","data-lazy-src","src")
+                    .map{img.attr(it)}.firstOrNull{it.startsWith("http")||
+                        it.startsWith("//")||it.startsWith("/")}
+                    ?.let{runCatching{URI(doc.location()).resolve(it).toString()}.getOrNull()}
+            }?.takeIf{SearchRanking.validUrl(it)}
+            found.add(RankedHit(title,absolute,provider.label,description,
+                thumbnail=thumb))
             if(found.size>=250)break
         }
         return found
     }
     fun searchDetailed(context:Context,keyword:String):SearchOutcome {
         require(keyword.trim().isNotBlank()){"Enter a search term"}
-        val providers=SearchRanking.parseProviders(sources(context))
+        val providers=searchProviders(context)
         if(providers.isEmpty())return SearchOutcome(emptyList(),0,
             listOf("No search providers configured"))
         val pool=java.util.concurrent.Executors.newFixedThreadPool(minOf(6,providers.size))
