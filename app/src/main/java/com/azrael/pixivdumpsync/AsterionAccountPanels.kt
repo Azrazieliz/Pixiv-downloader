@@ -180,17 +180,24 @@ object AsterionAccountPanels {
             17f,ui.white,true),0)
         val input=entry(a,"Creator / gallery URL")
         add(a,creator,input)
-        action(a,creator,"CONNECT SITE ACCOUNT",false){
+        val connect=ui.action(a,"SIGN IN TO SITE"){
             val url=input.text.toString().trim()
             if(!com.azrael.galleryflow.SiteSession.validLoginUrl(url)){
                 say(a,"Enter a secure HTTPS website URL above")
-            }else if(com.azrael.galleryflow.SiteSession.bound(a,url)){
-                say(a,"This website is already connected. Manage it below.")
-            }else{
+            }else if(!com.azrael.galleryflow.SiteSession.bound(a,url)){
                 a.startActivity(Intent(a,com.azrael.galleryflow.SiteLoginActivity::class.java)
                     .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,url))
             }
         }
+        add(a,creator,connect)
+        input.addTextChangedListener(object:android.text.TextWatcher{
+            override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+            override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){
+                connect.visibility=if(com.azrael.galleryflow.SiteSession.bound(a,s.toString().trim()))
+                    View.GONE else View.VISIBLE
+            }
+            override fun afterTextChanged(s:android.text.Editable?){}
+        })
         action(a,creator,"FOLLOW & SYNC",true){
             val url=input.text.toString().trim()
             if(!url.startsWith("https://")&&!url.startsWith("http://")){
