@@ -29,6 +29,7 @@ object VideoEngine {
             .setOngoing(true).setContentIntent(open).build()
     }
     fun launch(context: Context, scan: Boolean = false): Boolean {
+        if(!com.azrael.pixivdumpsync.AppPower.enabled(context))return false
         val intent=Intent(context,TransferService::class.java).putExtra("scan",scan)
         return try {
             if(Build.VERSION.SDK_INT>=26) context.startForegroundService(intent) else context.startService(intent)
@@ -38,6 +39,7 @@ object VideoEngine {
         }
     }
     fun work(context: Context, scan: Boolean, onStatus: (String)->Unit = {}) {
+        if(!com.azrael.pixivdumpsync.AppPower.enabled(context))return
         if(!busy.compareAndSet(false,true)) return
         try {
             val db=VideoDb(context)
@@ -49,6 +51,7 @@ object VideoEngine {
                 return
             }
             if(scan) {
+                com.azrael.pixivdumpsync.NameCrawler.scan(context,onStatus)
                 val settings=context.getSharedPreferences("video_options",Context.MODE_PRIVATE)
                 val max=settings.getInt("max_new",3).coerceIn(1,20)
                 for(watch in db.listWatches().filter { it.enabled }) {
@@ -71,7 +74,7 @@ object VideoEngine {
                     }
                 }
             }
-            while(true) {
+            while(com.azrael.pixivdumpsync.AppPower.enabled(context)) {
                 val next=db.next() ?: break
                 onStatus("Downloading ${next.title}")
                 db.update(next.id,"running")
@@ -80,9 +83,18 @@ object VideoEngine {
                         onStatus("${next.title}: $percent%")
                     }
                     db.update(next.id,"done",100,uri)
+                    if(com.azrael.pixivdumpsync.NduSettings.configured(context)){
+                        com.azrael.pixivdumpsync.NduCloudQueue(context).use{queue->
+                            queue.enqueue("videos",
+                                android.net.Uri.parse(uri).lastPathSegment.orEmpty()
+                                    .ifBlank{"video_"+next.id+".mp4"},
+                                android.net.Uri.parse(uri))
+                        }
+                        com.azrael.pixivdumpsync.NduUploadService.launch(context)
+                    }
                     onStatus("Saved ${next.title}")
                 } catch(t:Exception) {
-                    db.update(next.id,"error",error=t.message?:t.javaClass.simpleName)
+                    db.scheduleRetry(next.id,t.message?:t.javaClass.simpleName)
                     onStatus("Failed ${next.title}")
                 }
             }
@@ -105,8 +117,12 @@ object VideoEngine {
         parent.mkdirs()
         val template=File(parent,"%(title).160s [%(id)s].%(ext)s").absolutePath
         val prefs=context.getSharedPreferences("video_options",Context.MODE_PRIVATE)
+        val viaProxy=prefs.getBoolean("tor_proxy",false)
+        val hidden=Uri.parse(item.url).host.orEmpty().endsWith(".onion",true)
+        require(!hidden||viaProxy){"Configure a SOCKS proxy before connecting to this source"}
         val cookie=File(context.filesDir,"videoflow/cookies.txt")
         require(WebDiscovery.isUrl(item.url)){"Only public HTTP(S) video URLs are supported"}
+        val connectedCookies=AuthorizedVideoSession.temporaryCookies(context,item.url)
         fun request(link:String, referer:String?=null)=
             YtDlpRequest(link).setOutputTemplate(template)
                 .addOption("--no-playlist").addOption("--continue")
@@ -119,8 +135,11 @@ object VideoEngine {
                 .addOption("-f",prefs.getString("quality","best[ext=mp4]/best")
                     ?: "best[ext=mp4]/best")
                 .apply {
+                    if(viaProxy && hidden)addOption("--proxy", "socks5h://127.0.0.1:${prefs.getInt("tor_port",9050)}")
                     if(!referer.isNullOrBlank())addOption("--referer",referer)
-                    if(cookie.isFile&&cookie.length()>0)addOption("--cookies",cookie.absolutePath)
+                    val selected=connectedCookies?.takeIf{it.isFile&&it.length()>0}
+                        ?:cookie.takeIf{it.isFile&&it.length()>0}
+                    if(selected!=null)addOption("--cookies",selected.absolutePath)
                 }
         fun execute(link:String,referer:String?=null) {
             val response=YtDlp.execute(request(link,referer)){progress,_,_->
@@ -134,30 +153,38 @@ object VideoEngine {
         val variants=listOf(item.url)+SourceDiagnostics.alternateHosts(item.url)
         var last:Throwable?=null
         var downloaded=false
-        for(candidate in variants.distinct()) {
-            try {
-                execute(candidate)
-                downloaded=true
-                break
-            } catch(t:Exception) {last=t}
-            val media=runCatching{WebDiscovery.directMedia(candidate)}.getOrNull()
-            if(!media.isNullOrBlank()&&media!=candidate) {
+        try {
+            for(candidate in variants.distinct()) {
                 try {
-                    execute(media,candidate)
+                    execute(candidate)
                     downloaded=true
                     break
                 } catch(t:Exception) {last=t}
+                val media=if(viaProxy)null else runCatching{WebDiscovery.directMedia(candidate)}.getOrNull()
+                if(!media.isNullOrBlank()&&media!=candidate) {
+                    try {
+                        execute(media,candidate)
+                        downloaded=true
+                        break
+                    } catch(t:Exception) {last=t}
+                }
             }
+        } finally {
+            // Do not keep browser authentication in the file system after transfer.
+            connectedCookies?.delete()
         }
         if(!downloaded)throw (last?:IllegalStateException("No video extractor succeeded"))
         val file=parent.listFiles()?.filter { it.isFile && it.length()>0 &&
-            it.extension.lowercase() in setOf("mp4","mkv","webm","mov","ts") }
+            it.extension.lowercase() in setOf("mp4","mkv","webm","mov","ts","m4a","mp3","flac","opus") }
             ?.maxByOrNull { it.length() } ?: error("No completed playable video found")
+        val audioOnly=prefs.getString("quality","")=="bestaudio/best"
         val name=file.name.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"),"_").take(210)
         val values=ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME,name)
             put(MediaStore.Downloads.MIME_TYPE,when(file.extension.lowercase()){
-                "mp4"->"video/mp4";"webm"->"video/webm";"mkv"->"video/x-matroska"; else->"video/*"
+                "mp4"->"video/mp4";"webm"->if(audioOnly)"audio/webm" else "video/webm"
+                "mkv"->"video/x-matroska";"m4a"->"audio/mp4";"mp3"->"audio/mpeg"
+                "flac"->"audio/flac";"opus"->"audio/ogg";else->"video/*"
             })
             put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/VideoFlow/")
             put(MediaStore.Downloads.IS_PENDING,1)

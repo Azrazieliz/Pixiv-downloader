@@ -14,13 +14,13 @@ import android.widget.TextView
 
 /** Shared visual language for Asterion Downloader's source hub, galleries and transfers. */
 object NocturneDesign {
-    val background = Color.rgb(10, 14, 24)
-    val surface = Color.rgb(20, 28, 42)
-    val raised = Color.rgb(27, 36, 52)
-    val soft = Color.rgb(30, 48, 63)
-    val border = Color.rgb(48, 65, 81)
-    val primary = Color.rgb(114, 230, 216)
-    val violet = Color.rgb(181, 165, 255)
+    val background = Color.rgb(12, 12, 17)
+    val surface = Color.rgb(23, 23, 31)
+    val raised = Color.rgb(31, 31, 42)
+    val soft = Color.rgb(37, 32, 47)
+    val border = Color.rgb(61, 55, 74)
+    val primary = Color.rgb(190, 167, 238)
+    val violet = Color.rgb(190, 167, 238)
     val white = Color.rgb(245, 248, 251)
     val secondary = Color.rgb(175, 193, 207)
     val subdued = Color.rgb(128, 153, 170)

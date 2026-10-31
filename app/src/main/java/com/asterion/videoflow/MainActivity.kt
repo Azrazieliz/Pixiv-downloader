@@ -96,7 +96,7 @@ class MainActivity:Activity() {
         },LinearLayout.LayoutParams(dp(43),dp(43)))
         val appTitle=col().apply{setPadding(dp(10),0,0,0)}
         appTitle.addView(text("ASTERION DOWNLOADER",16f,white,true).apply{letterSpacing=0.04f})
-        appTitle.addView(text("VIDEOFLOW  /  VIDEO",10f,grey,true).apply{letterSpacing=0.08f})
+        appTitle.addView(text("VIDEOS / MEDIA",10f,grey,true).apply{letterSpacing=0.08f})
         top.addView(appTitle,LinearLayout.LayoutParams(0,-2,1f))
         top.addView(text("HUB",11f,primary,true).apply{
             gravity=Gravity.CENTER
@@ -162,7 +162,7 @@ class MainActivity:Activity() {
         hero.addView(gap(9))
         hero.addView(text("Paste a video link.\nSave it locally.",26f,white,true))
         hero.addView(gap(8))
-        hero.addView(text("No keyword search, no Tor. Paste the exact video page or media URL.",13f,grey))
+        hero.addView(text("Video page URLs are downloaded here. Keyword discovery and optional proxy settings are in Asterion.",13f,grey))
         add(content,hero)
         val box=card()
         box.addView(text("VIDEO URL",12f,primary,true))

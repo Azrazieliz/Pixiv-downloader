@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
 
-class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 4) {
+class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE entities(
             source TEXT NOT NULL,
@@ -87,6 +87,14 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
             db.execSQL("""
                 UPDATE entities SET archived=1, selected=0, live_enabled=0
                 WHERE source NOT IN ('kiutaku','generic')
+            """.trimIndent())
+        }
+        if (oldVersion < 5) {
+            // Unhide preserved records from the original Kyora providers.
+            // Do not automatically re-enable background downloads.
+            db.execSQL("""
+                UPDATE entities SET archived=0
+                WHERE source IN ('4khd','buondua','cosplaytele','4kgirl','everia')
             """.trimIndent())
         }
     }
@@ -213,7 +221,7 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
         readableDatabase.query(
             "entities",
             arrayOf("source","entity_id","display_name","canonical_url","kind","selected","live_enabled","live_cursor","last_sync_at","last_error"),
-            "archived=0 AND source IN ('kiutaku','generic')",
+            "archived=0 AND source IN ('kiutaku','4khd','buondua','cosplaytele','4kgirl','everia','generic')",
             null,null,null,"display_name COLLATE NOCASE ASC"
         ).use { c ->
             while (c.moveToNext()) {
@@ -242,6 +250,39 @@ class GalleryDb(context: Context) : SQLiteOpenHelper(context, "galleryflow.db", 
         }, "source=? AND entity_id=?", arrayOf(source.wireName, entityId))
     }
 
+    /** Seed the original Kyora supported-site catalog once; no background sync starts.
+     * Existing rows, enabled flags and user removals are respected. */
+    fun seedCatalogOnce(context: Context) {
+        val preferences=context.getSharedPreferences("kyora_catalog",Context.MODE_PRIVATE)
+        if(preferences.getBoolean("canonical_six_seeded_20261031",false)) return
+        writableDatabase.beginTransaction()
+        try {
+            for (entity in AdapterRegistry.defaultEntities()) {
+                val row=ContentValues().apply {
+                    put("source",entity.source.wireName)
+                    put("entity_id",entity.stableId)
+                    put("display_name",entity.displayName)
+                    put("canonical_url",entity.canonicalUrl)
+                    put("kind",entity.kind)
+                    put("selected",0)
+                    put("live_enabled",0)
+                    put("archived",0)
+                }
+                writableDatabase.insertWithOnConflict("entities",null,row,SQLiteDatabase.CONFLICT_IGNORE)
+            }
+            writableDatabase.setTransactionSuccessful()
+        } finally { writableDatabase.endTransaction() }
+        preferences.edit().putBoolean("canonical_six_seeded_20261031",true).apply()
+    }
+
+    fun setAllSelected(value:Boolean) {
+        writableDatabase.execSQL("UPDATE entities SET selected=? WHERE archived=0 AND source IN ('kiutaku','4khd','buondua','cosplaytele','4kgirl','everia','generic')",
+            arrayOf(if(value)1 else 0))
+    }
+    fun setAllLiveEnabled(value:Boolean) {
+        writableDatabase.execSQL("UPDATE entities SET live_enabled=? WHERE archived=0 AND source IN ('kiutaku','4khd','buondua','cosplaytele','4kgirl','everia','generic')",
+            arrayOf(if(value)1 else 0))
+    }
     fun setSelected(source: SourceId, entityId: String, value: Boolean) =
         setEntityBoolean(source, entityId, "selected", value)
 

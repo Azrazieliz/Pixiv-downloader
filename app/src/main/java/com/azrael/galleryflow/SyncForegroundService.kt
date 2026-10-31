@@ -44,6 +44,9 @@ class SyncForegroundService : Service() {
             }
         }
 
+        if(!com.azrael.pixivdumpsync.AppPower.enabled(this)) {
+            stopSelf();return START_NOT_STICKY
+        }
         val mode = runCatching { SyncMode.valueOf(intent?.getStringExtra(EXTRA_MODE) ?: SyncMode.LIVE.name) }
             .getOrDefault(SyncMode.LIVE)
         if (currentRun?.isDone == false) {

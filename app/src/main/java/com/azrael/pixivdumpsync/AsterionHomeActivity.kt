@@ -1,0 +1,739 @@
+package com.azrael.pixivdumpsync
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.*
+import android.graphics.Color
+import android.net.Uri
+import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.*
+import com.asterion.videoflow.VideoDb
+import com.asterion.videoflow.VideoEngine
+import com.asterion.videoflow.WebDiscovery
+import com.azrael.galleryflow.AdapterRegistry
+import com.azrael.galleryflow.GalleryDb
+import com.azrael.galleryflow.SyncMode
+import java.net.URI
+
+/** One top-level application for all sources; legacy specialists remain advanced tools. */
+class AsterionHomeActivity:Activity(){
+    private val theme=NocturneDesign
+    private lateinit var root:LinearLayout
+    private lateinit var body:LinearLayout
+    private lateinit var scroller:ScrollView
+    private var page="Home"
+    private var pendingChapterRetry:Long=-1L
+    private val chapterSessionRequest=418
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
+        super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode in listOf(5201,5202,5203)) {
+            if(resultCode==RESULT_OK)
+                ResourceDownloads.onFilePicked(this,requestCode,data?.data)
+            return
+        }
+        if(requestCode!=chapterSessionRequest)return
+        val id=pendingChapterRetry
+        pendingChapterRetry=-1L
+        if(resultCode==RESULT_OK && id>=0){
+            ChapterQueue(this).use{it.retry(id)}
+            ChapterArchives.start(this)
+            toast("Saved browser session. Retrying the chapter ZIP.")
+        }else if(id>=0) toast("Browser connection was not saved; ZIP retry remains paused.")
+        if(::body.isInitialized)render()
+    }
+    private val pages=listOf("Home","Videos","Books","Games")
+    private val navButtons=linkedMapOf<String,TextView>()
+    private fun dp(v:Int)=theme.px(this,v)
+    private fun text(v:String,size:Float=14f,tint:Int=theme.white,bold:Boolean=false)=
+        theme.text(this,v,size,tint,bold)
+    private fun button(label:String,action:()->Unit)=theme.action(this,label,false,action)
+    private fun section(title:String,subtitle:String=""){
+        body.addView(text(title,23f,theme.white,true),theme.lp(this,20,4))
+        if(subtitle.isNotBlank())body.addView(text(subtitle,12f,theme.secondary))
+    }
+    private fun card():LinearLayout=theme.card(this)
+    private fun put(parent:LinearLayout,v:View,top:Int=9){
+        parent.addView(v,theme.lp(this,top))
+    }
+    private fun edit(hint:String):EditText=EditText(this).apply{
+        this.hint=hint;setSingleLine(true);textSize=15f
+        setTextColor(theme.white);setHintTextColor(theme.subdued)
+        background=theme.shape(this@AsterionHomeActivity,theme.raised,12)
+        setPadding(dp(12),dp(9),dp(12),dp(9))
+    }
+    private fun toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_LONG).show()
+    override fun onCreate(savedInstanceState:Bundle?){
+        super.onCreate(savedInstanceState)
+        window.statusBarColor=theme.background
+        window.navigationBarColor=theme.background
+        GalleryDb(this).use{it.seedCatalogOnce(this)}
+        ChapterRecovery.ensure(this)
+        XPhotoScheduler.ensure(this)
+        root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(theme.background)}
+        val head=theme.row(this).apply{setPadding(dp(14),dp(12),dp(14),dp(12))}
+        head.addView(theme.brandMark(this,47),LinearLayout.LayoutParams(dp(47),dp(47)))
+        val label=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(11),0,0,0)}
+        label.addView(text("ASTERION DOWNLOADER",19f,theme.white,true))
+        label.addView(text("Creator archives · Sync · Backfill",11f,theme.secondary))
+        head.addView(label,LinearLayout.LayoutParams(0,-2,1f))
+        root.addView(head)
+        val settings=text("SETTINGS",12f,theme.secondary,true).apply{
+            gravity=Gravity.CENTER
+            isClickable=true
+            isFocusable=true
+            contentDescription="Open settings"
+            setPadding(dp(12),dp(10),dp(12),dp(10))
+            setOnClickListener{open("Settings")}
+        }
+        head.addView(settings)
+        scroller=ScrollView(this).apply{isFillViewport=true}
+        body=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            setPadding(dp(17),dp(5),dp(17),dp(34))
+        }
+        scroller.addView(body)
+        root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
+        val tabs=theme.row(this).apply{setPadding(dp(5),dp(7),dp(5),dp(7));setBackgroundColor(theme.surface)}
+        pages.forEach{tab->
+            val title=when(tab){"Home"->"SOURCES";"Videos"->"VIDEOS";"Books"->"BOOKS";else->"GAMES"}
+            val t=text(title,14f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
+                gravity=Gravity.CENTER;minHeight=dp(50)
+                isClickable=true;isFocusable=true
+                setOnClickListener{open(tab)}
+            }
+            navButtons[tab]=t
+            tabs.addView(t,LinearLayout.LayoutParams(0,-2,1f))
+        }
+        root.addView(tabs)
+        // Android 15+ enforces edge-to-edge: keep the status/navigation bars clear.
+        if(android.os.Build.VERSION.SDK_INT>=30){
+            root.setOnApplyWindowInsetsListener{_,insets->
+                val status=insets.getInsets(android.view.WindowInsets.Type.statusBars())
+                val navigation=insets.getInsets(android.view.WindowInsets.Type.navigationBars())
+                head.setPadding(dp(14),dp(12)+status.top,dp(14),dp(12))
+                tabs.setPadding(dp(5),dp(7),dp(5),dp(7)+navigation.bottom)
+                insets
+            }
+        }
+        setContentView(root)
+        window.decorView.systemUiVisibility=0
+        when(intent?.action){
+            Intent.ACTION_SEND->intent.getStringExtra(Intent.EXTRA_TEXT)?.let{submitInput(it)}
+        }
+        render()
+    }
+    override fun onResume(){super.onResume();if(::body.isInitialized)render()}
+    @Suppress("DEPRECATION")
+    override fun onBackPressed(){
+        if(page!="Home")open("Home") else super.onBackPressed()
+    }
+    private fun open(target:String){
+        page=target
+        if(::body.isInitialized){render();scroller.scrollTo(0,0)}
+    }
+    private fun render(){
+        navButtons.forEach{(tab,view)->
+            view.setTextColor(if(tab==page)theme.primary else theme.secondary)
+            view.setTypeface(null,if(tab==page)android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        }
+        body.removeAllViews()
+        val power = Switch(this).apply {
+            text=if(AppPower.enabled(this@AsterionHomeActivity))
+                "APP ON · Downloads and background sync enabled"
+                else "APP OFF · All downloads and scheduled sync suspended"
+            textSize=13f
+            setTextColor(theme.white)
+            isChecked=AppPower.enabled(this@AsterionHomeActivity)
+            setOnCheckedChangeListener{_,turnOn->
+                AppPower.set(this@AsterionHomeActivity,turnOn)
+                render()
+            }
+        }
+        put(body,power,4)
+        if(!AppPower.enabled(this)){
+            put(body,text("OFF preserves all artists, credentials, archives and queued work. Re-enable to continue.",12f,theme.secondary),5)
+        }
+        when(page){
+            "Home"->renderHome()
+            "Pixiv"->AsterionAccountPanels.pixiv(this,body){render()}
+            "Toonily"->renderToonily()
+            "X"->AsterionAccountPanels.x(this,body){render()}
+            "Site"->AsterionAccountPanels.cosplay(this,body){render()}
+            "Videos"->renderAdd()
+            "Books"->ResourceDownloads.render(this,body,false)
+            "Games"->ResourceDownloads.render(this,body,true)
+            "Queue"->renderQueue()
+            "Library"->renderLibrary()
+            "Sources"->renderSources()
+            else->renderSettings()
+        }
+        if(page!="Home"){
+            put(body,button("BACK TO SOURCE HOME"){open("Home")},24)
+        }
+    }
+    private fun sourceTile(label:String,subtitle:String,icon:Int,tint:Int,
+                           target:String):LinearLayout=LinearLayout(this).apply{
+        orientation=LinearLayout.VERTICAL
+        gravity=Gravity.CENTER_HORIZONTAL
+        minimumHeight=dp(180)
+        setPadding(dp(13),dp(19),dp(13),dp(17))
+        background=theme.touch(this@AsterionHomeActivity,theme.surface,19)
+        isClickable=true
+        isFocusable=true
+        contentDescription="$label. $subtitle"
+        setOnClickListener{
+            when(target){
+                "Pixiv"->startActivity(Intent(this@AsterionHomeActivity,MainActivity::class.java))
+                "Kyora"->startActivity(Intent(this@AsterionHomeActivity,com.azrael.galleryflow.MainActivity::class.java))
+                "Site"->startActivity(Intent(this@AsterionHomeActivity,com.azrael.galleryflow.MainActivity::class.java)
+                    .putExtra(com.azrael.galleryflow.MainActivity.EXTRA_ADD_SITE,true))
+                else->open(target)
+            }
+        }
+        val symbol=ImageView(this@AsterionHomeActivity).apply{
+            setImageResource(icon)
+            imageTintList=android.content.res.ColorStateList.valueOf(tint)
+            scaleType=ImageView.ScaleType.FIT_CENTER
+            setPadding(dp(11),dp(11),dp(11),dp(11))
+            background=theme.shape(this@AsterionHomeActivity,theme.raised,18)
+            contentDescription="$label icon"
+        }
+        addView(symbol,LinearLayout.LayoutParams(dp(68),dp(68)))
+        addView(text(label,16f,theme.white,true).apply{
+            gravity=Gravity.CENTER
+            setPadding(0,dp(10),0,0)
+            maxLines=2
+        },LinearLayout.LayoutParams(-1,-2))
+        addView(text(subtitle,11f,theme.secondary).apply{
+            gravity=Gravity.CENTER
+            setPadding(0,dp(6),0,0)
+            maxLines=3
+        },LinearLayout.LayoutParams(-1,-2))
+    }
+    private fun tileRow(left:View,right:View){
+        val row=theme.row(this)
+        row.gravity=Gravity.TOP
+        row.addView(left,LinearLayout.LayoutParams(0,-2,1f))
+        row.addView(right,LinearLayout.LayoutParams(0,-2,1f).apply{leftMargin=dp(11)})
+        put(body,row,12)
+    }
+    private fun renderHome(){
+        section("Choose a source","Connect accounts and websites, synchronize new posts or backfill older content.")
+        tileRow(
+            sourceTile("Pixiv","Artists · Account sync · Backfill",
+                R.drawable.ic_source_pixiv,android.graphics.Color.rgb(65,161,255),"Pixiv"),
+            sourceTile("Toonily","Manhwa series · Complete ZIP",
+                R.drawable.ic_source_toonily,theme.violet,"Toonily")
+        )
+        tileRow(
+            sourceTile("X","Follow accounts · Photo sync · Backfill",
+                R.drawable.ic_source_x,theme.white,"X"),
+            sourceTile("Kyora","Cosplay creators · Sync · Backfill",
+                R.drawable.ic_source_kyora,theme.violet,"Kyora")
+        )
+        tileRow(
+            sourceTile("Add Site","Bind a new website · Sign in · Backfill",
+                R.drawable.ic_source_site,theme.primary,"Site"),
+            sourceTile("Video Search","Direct sites · Videos & previews",
+                R.drawable.ic_source_video,theme.primary,"Videos")
+        )
+        val all=card()
+        put(all,text("ALL ARTIST SYNC CONTROLS",13f,theme.secondary,true),0)
+        put(all,text("Enable or disable Pixiv, X and Kyora together. Site catalog entries start disabled until you choose them.",12f,theme.secondary))
+        val toggles=theme.row(this)
+        toggles.addView(button("ENABLE ALL"){
+            AppDb(this).use{it.setAllSelected(true);it.setAllLiveEnabled(true)}
+            XPhotoQueue(this).use{it.setAllEnabled(true)}
+            GalleryDb(this).use{it.setAllSelected(true);it.setAllLiveEnabled(true)}
+            toast("All saved artists and sources enabled");render()
+        },LinearLayout.LayoutParams(0,-2,1f))
+        toggles.addView(button("DISABLE ALL"){
+            AppDb(this).use{it.setAllSelected(false);it.setAllLiveEnabled(false)}
+            XPhotoQueue(this).use{it.setAllEnabled(false)}
+            GalleryDb(this).use{it.setAllSelected(false);it.setAllLiveEnabled(false)}
+            toast("All saved artists and sources disabled");render()
+        },LinearLayout.LayoutParams(0,-2,1f).apply{leftMargin=dp(8)})
+        put(all,toggles)
+        put(body,all,12)
+        val counts=card()
+        val pixivCount=AppDb(this).use{it.listArtists().size}
+        val siteCount=GalleryDb(this).use{it.listEntities().size}
+        val xCount=XPhotoQueue(this).use{it.allSources().size}
+        put(counts,text("YOUR ARCHIVE",12f,theme.secondary,true),0)
+        put(counts,text("$pixivCount Pixiv artists  ·  $siteCount sites  ·  $xCount X accounts",
+            14f,theme.white,true),5)
+        put(body,counts,18)
+        put(body,button("TRANSFER STATUS AND RETRIES"){open("Queue")},8)
+        val tools=card()
+        put(tools,text("Other download tools",15f,theme.white,true),0)
+        put(tools,text("Video links, keyword searches and optional external sources.",
+            12f,theme.secondary))
+        put(tools,button("VIDEO URL DOWNLOADS & SEARCH"){open("Videos")})
+        put(body,tools,16)
+    }
+    private fun renderToonily(){
+        section("Comics · Toonily / MangaRead",
+            "Archive accessible Toonily or MangaRead chapters into one flat, ordered ZIP.")
+        val inputCard=card()
+        put(inputCard,text("Full series download",18f,theme.white,true),0)
+        put(inputCard,text("Paste a Toonily or mangaread.org manga series URL. Chapter order and decimal chapters are preserved.",
+            12f,theme.secondary))
+        val input=edit("https://toonily.com/serie/...")
+        put(inputCard,input)
+        put(inputCard,theme.action(this,"SAVE ALL CHAPTERS AS ZIP",true){
+            val url=input.text.toString().trim()
+            if(!WebDiscovery.isUrl(url)){toast("Enter a valid series or chapter URL");return@action}
+            val slug=runCatching{
+                val pieces=URI(url).path.trim('/').split('/')
+                if(pieces.firstOrNull() in listOf("serie","series","manga","manhwa"))
+                    pieces.getOrNull(1) else pieces.lastOrNull()
+            }.getOrNull().orEmpty().ifBlank{"Manhwa series"}
+            val added=ChapterQueue(this).use{it.enqueue(url,slug)}
+            if(added)ChapterArchives.start(this)
+            toast(if(added)"Series ZIP queued" else "Series is already in downloads")
+            render()
+        })
+        put(inputCard,button("OPEN SOURCE IN BROWSER / SAVE SESSION"){
+            val raw=input.text.toString().trim()
+            val address=if(raw.isBlank())"https://toonily.com/" else raw
+            if(!com.azrael.galleryflow.SiteSession.validLoginUrl(address)){
+                toast("Enter a valid HTTPS source");return@button
+            }
+            startActivity(Intent(this,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,address))
+        })
+        put(inputCard,button("OPEN MANGAREAD"){
+            startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://www.mangaread.org/")))
+        })
+        put(body,inputCard,12)
+        section("Series downloads","Progress and site-specific access errors are shown here.")
+        val jobs=ChapterQueue(this).use{it.list().take(25)}
+        if(jobs.isEmpty())put(body,text("No manhwa series queued yet.",13f,theme.secondary),10)
+        for(job in jobs){
+            val c=card()
+            put(c,text(job.title,16f,theme.white,true),0)
+            put(c,text(job.state.uppercase()+" · "+job.progress+"% · "+
+                job.attempts+" attempt(s)",12f,theme.secondary))
+            if(!job.error.isNullOrBlank())
+                put(c,text(job.error.take(330),12f,theme.danger))
+            if(job.state=="error"){
+                put(c,button("RETRY ZIP"){
+                    ChapterQueue(this).use{it.retry(job.id)}
+                    ChapterArchives.start(this)
+                    render()
+                })
+                if(job.error.orEmpty().contains("403") ||
+                    job.error.orEmpty().contains("browser verification",true)){
+                    put(c,button("OPEN SOURCE BROWSER & RETRY"){
+                        pendingChapterRetry=job.id
+                        startActivityForResult(
+                            Intent(this,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                                .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,job.url),
+                            chapterSessionRequest)
+                    })
+                }
+            }
+            if(job.state=="done" && !job.savedUri.isNullOrBlank())
+                put(c,text("ZIP saved to Downloads / AsterionDownloader / Comics",
+                    12f,theme.primary))
+            put(body,c,10)
+        }
+    }
+    private fun renderAdd(){
+        section("Video tools","Secondary tools for individual video URLs and keyword searches.")
+        val byLink=card()
+        put(byLink,text("Download a video URL",18f,theme.white,true),0)
+        put(byLink,text("Video sites and direct files. Other supported links are routed automatically.",
+            12f,theme.secondary))
+        val input=edit("Paste a video URL")
+        val clip=getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        put(byLink,input)
+        put(byLink,theme.action(this,"DOWNLOAD LINK",true){
+            submitInput(input.text.toString().trim())
+        })
+        put(byLink,button("PASTE FROM CLIPBOARD"){
+            val value=clip.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
+            if(value.isNotBlank())input.setText(value) else toast("Clipboard is empty")
+        })
+        put(byLink,button("SIGN IN TO A VIDEO WEBSITE"){
+            val address=input.text.toString().trim()
+            if(!com.azrael.galleryflow.SiteSession.validLoginUrl(address)){
+                toast("Paste the HTTPS website or video URL first");return@button
+            }
+            startActivity(Intent(this,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,address))
+        })
+        put(byLink,text("Signed-in downloads can use the access already available to your account. The app cannot unlock another website's paid content.",12f,theme.secondary))
+        put(body,byLink,12)
+
+        val byName=card()
+        put(byName,text("Search videos by name",18f,theme.white,true),0)
+        put(byName,text("Search anime videos, adult videos or torrent indexes; torrent results can open in a BitTorrent client.",
+            12f,theme.secondary))
+        val searchPrefs=getSharedPreferences("asterion_video_search",MODE_PRIVATE)
+        val query=edit("Creator, title or keywords")
+        query.setText(searchPrefs.getString("last_query",""))
+        put(byName,query)
+        put(byName,text("SEARCH AREA",12f,theme.secondary,true),9)
+        val scopes=listOf(
+            "Hentai" to VideoSearchArea.HENTAI,
+            "Porn" to VideoSearchArea.PORN,
+            "Piracy / Darkweb" to VideoSearchArea.PIRACY_DARKWEB
+        )
+        val selectedArea=searchPrefs.getString("area","PORN").orEmpty()
+            .takeIf{it in listOf("HENTAI","PORN","PIRACY_DARKWEB")} ?: "PORN"
+        if(selectedArea!=searchPrefs.getString("area",""))
+            searchPrefs.edit().putString("area",selectedArea).apply()
+        val activeArea=text("Selected: "+scopes.firstOrNull{it.second.name==selectedArea}
+            ?.first.orEmpty().ifBlank{"Porn"},12f,theme.primary)
+        put(byName,activeArea,3)
+        for(group in scopes.chunked(3)){
+            val r=theme.row(this)
+            group.forEachIndexed { index,pair ->
+                val b=button(pair.first) {
+                    searchPrefs.edit().putString("area",pair.second.name).apply()
+                    activeArea.text="Selected: "+pair.first
+                }
+                r.addView(b,LinearLayout.LayoutParams(0,-2,1f).apply{
+                    if(index>0)leftMargin=dp(5)
+                })
+            }
+            put(byName,r,6)
+        }
+        val follow=CheckBox(this).apply{
+            text="Keep checking for new videos"
+            setTextColor(theme.secondary)
+            isChecked=false
+        }
+        put(byName,follow)
+        put(byName,theme.action(this,"SEARCH VIDEOS",true){
+            val value=query.text.toString().trim()
+            if(value.isBlank()){toast("Enter a name or keywords");return@action}
+            val area=runCatching{VideoSearchArea.valueOf(
+                searchPrefs.getString("area","PORN") ?: "PORN")}
+                .getOrDefault(VideoSearchArea.PORN)
+            val queryKey=area.name+":"+value
+            searchPrefs.edit().putString("last_query",value)
+                .remove("last_error").apply()
+            if(follow.isChecked)NameWatchDb(this).use{it.add(value)}
+            toast("Searching your saved video sources…")
+            Thread {
+                val outcome=runCatching{KeywordSources.searchDetailed(applicationContext,value,
+                    area)}
+                outcome.onSuccess { result->
+                    SearchResultsDb(applicationContext).use{it.save(queryKey,result.hits)}
+                    val failures=result.failures.take(5).joinToString(" | ")
+                    searchPrefs.edit().putString("last_error",failures).apply()
+                    runOnUiThread{
+                        toast("${result.hits.size} matches from ${result.checked} sources")
+                        render()
+                    }
+                }.onFailure{error->
+                    searchPrefs.edit().putString("last_error",error.message).apply()
+                    runOnUiThread{toast("Search error: ${error.message}");render()}
+                }
+            }.start()
+        })
+        put(body,byName,12)
+
+        val lastQuery=searchPrefs.getString("last_query","").orEmpty()
+        val queryKey=selectedArea+":"+lastQuery
+        val hits=if(lastQuery.isBlank())emptyList() else
+            SearchResultsDb(this).use{it.listForQuery(queryKey,60)}
+        val sourceErrors=searchPrefs.getString("last_error","").orEmpty()
+        if(lastQuery.isNotBlank()){
+            section("Results for: "+lastQuery,
+                "${hits.size} saved candidates · ranked by match. Results are not completed downloads.")
+            if(sourceErrors.isNotBlank())put(body,
+                text("Source errors: "+sourceErrors.take(350),12f,theme.danger))
+            if(hits.isEmpty())put(body,
+                text("No matching videos indexed yet. Check the source errors or search another name.",
+                    13f,theme.secondary))
+            for(hit in hits.take(25)){
+                val c=card()
+                val thumbnail=ImageView(this).apply{
+                    minimumHeight=dp(124)
+                    setBackgroundColor(theme.raised)
+                    adjustViewBounds=true
+                    layoutParams=LinearLayout.LayoutParams(-1,dp(160))
+                }
+                put(c,thumbnail,0)
+                VideoSearchPreviews.display(this,thumbnail,hit.thumbnail)
+                put(c,text(hit.title,16f,theme.white,true),8)
+                val isIndex=SearchRanking.isIndexPage(hit.url)
+                put(c,text(hit.source+" · "+(if(isIndex)"Indexed source page" else "Video result"),
+                    12f,theme.primary))
+                put(c,text(hit.url.take(120),11f,theme.subdued))
+                if(isIndex){
+                    put(c,button("OPEN TORRENT SOURCE"){
+                        ResourceDownloads.openTorrentSource(this,hit.url)
+                    })
+                }else if(!hit.queued){
+                    put(c,button("DOWNLOAD THIS RESULT"){
+                        val added=VideoDb(this).use{it.addVideo(hit.url,hit.title)}
+                        if(added){
+                            SearchResultsDb(this).use{it.markQueued(hit.query,hit.url)}
+                            VideoEngine.launch(this,false)
+                        }
+                        toast(if(added)"Added to downloads" else "Already in downloads")
+                        open("Queue")
+                    })
+                }else put(c,text("Already added to downloads",12f,theme.primary))
+                put(body,c,8)
+            }
+        }
+    }
+    private fun submitInput(raw:String){
+        val value=raw.trim()
+        if(!WebDiscovery.isUrl(value)){
+            toast("Enter a valid HTTP(S) link");return
+        }
+        when(SourceRouter.classify(value)){
+            DownloadKind.PIXIV->{
+                val id=SourceRouter.pixivArtistId(value)
+                if(id==null){toast("Add a Pixiv artist profile URL");return}
+                AppDb(this).use{it.addArtist(id)}
+                val sync=Intent(this,SyncForegroundService::class.java).apply{
+                    action=SyncForegroundService.ACTION_START
+                    putExtra(SyncForegroundService.EXTRA_MODE,"BACKFILL")
+                    putExtra(SyncForegroundService.EXTRA_TARGET_ARTIST_ID,id)
+                }
+                startForegroundService(sync)
+                toast("Pixiv artist added")
+            }
+            DownloadKind.X->{
+                val ok=XPhotoQueue(this).use{it.addSource(value)}
+                if(ok){XPhotoScheduler.ensure(this);XPhotoEngine.start(this)}
+                toast(if(ok)"X images queued" else "X account/post already saved")
+            }
+            DownloadKind.COMIC->{
+                val ok=ChapterQueue(this).use{it.enqueue(value,URI(value).path.takeLast(70))}
+                if(ok)ChapterArchives.start(this)
+                toast(if(ok)"Chapter ZIP queued" else "Archive already in queue")
+            }
+            DownloadKind.VIDEO->{
+                val ok=VideoDb(this).use{it.addVideo(value,value)}
+                if(ok)VideoEngine.launch(this,false)
+                toast(if(ok)"Video queued" else "Already in video history")
+            }
+            DownloadKind.GALLERY->{
+                toast("Resolving gallery…")
+                Thread{
+                    val result=runCatching{
+                        val adapter=AdapterRegistry.forUrl(value)
+                        val entity=adapter.resolveEntity(value)
+                        GalleryDb(this).use{it.addEntity(entity)}
+                        val service=Intent(this,com.azrael.galleryflow.SyncForegroundService::class.java)
+                            .setAction(com.azrael.galleryflow.SyncForegroundService.ACTION_START)
+                            .putExtra(com.azrael.galleryflow.SyncForegroundService.EXTRA_MODE,SyncMode.BACKFILL.name)
+                            .putExtra(com.azrael.galleryflow.SyncForegroundService.EXTRA_SITE_ID,entity.stableId)
+                        startForegroundService(service)
+                    }
+                    runOnUiThread{toast(if(result.isSuccess)"Gallery queued" else
+                        "Gallery error: ${result.exceptionOrNull()?.message}")}
+                }.start()
+            }
+        }
+        page="Queue";render()
+    }
+    private fun renderQueue(){
+        section("Downloads","Queued, downloading, completed and failed files in one place.")
+        val videos=VideoDb(this).use{it.listVideos(200)}
+        val comics=ChapterQueue(this).use{it.list()}
+        val xphotos=XPhotoQueue(this).use{it.recent(100)}
+        val artists=AppDb(this).use{it.listArtists()}
+        val galleries=GalleryDb(this).use{it.listEntities()}
+        put(body,text("${videos.count{it.status=="running"||it.status=="queued"}+
+            comics.count{it.state=="working"||it.state=="queued"}+
+            xphotos.count{it.state=="running"||it.state=="queued"}} pending   •   "+
+            "${videos.count{it.status=="error"}+comics.count{it.state=="error"}+xphotos.count{it.state=="error"}} failed",
+            14f,theme.primary,true))
+        val actions=theme.row(this)
+        actions.addView(button("RETRY VIDEOS"){VideoEngine.launch(this,false)},
+            LinearLayout.LayoutParams(0,-2,1f))
+        actions.addView(button("RETRY CHAPTERS"){ChapterArchives.start(this)},
+            LinearLayout.LayoutParams(0,-2,1f).apply{leftMargin=dp(8)})
+        put(body,actions)
+        put(body,button("RETRY X IMAGES"){XPhotoEngine.start(this)})
+        xphotos.take(35).forEach{photo->
+            val c=card()
+            put(c,text("X IMAGE · ${photo.state.uppercase()}",13f,theme.primary,true),0)
+            put(c,text(photo.photo,11f,theme.secondary))
+            if(photo.error!=null)put(c,text(photo.error,11f,theme.danger))
+            if(photo.state=="error")put(c,button("RETRY"){
+                XPhotoQueue(this).use{it.retry(photo.id)}
+                XPhotoEngine.start(this);render()
+            })
+            if(photo.saved!=null)put(c,button("OPEN"){openFile(photo.saved,"image/*")})
+            put(body,c,9)
+        }
+        videos.take(70).forEach{v->
+            val c=card()
+            put(c,text("VIDEO  ·  ${v.status.uppercase()}  ·  ${v.progress}%",13f,theme.primary,true),0)
+            put(c,text(v.title.take(120),13f))
+            if(v.error!=null)put(c,text(v.error.take(150),11f,theme.danger))
+            if(v.status=="error")put(c,button("RETRY"){
+                VideoDb(this).use{it.retry(v.id)}
+                VideoEngine.launch(this,false);render()
+            })
+            if(v.savedUri!=null)put(c,button("OPEN"){
+                openFile(v.savedUri,"video/*")
+            })
+            put(body,c,9)
+        }
+        comics.take(70).forEach{v->
+            val c=card()
+            put(c,text("CHAPTER ZIP  ·  ${v.state.uppercase()}  ·  ${v.progress}%",13f,theme.violet,true),0)
+            put(c,text(v.title,13f))
+            if(v.error!=null)put(c,text(v.error.take(150),11f,theme.danger))
+            if(v.state=="error")put(c,button("RETRY"){
+                ChapterQueue(this).use{it.retry(v.id)}
+                ChapterArchives.start(this);render()
+            })
+            if(v.savedUri!=null)put(c,button("OPEN"){openFile(v.savedUri,"application/zip")})
+            put(body,c,9)
+        }
+        put(body,text("${artists.size} Pixiv artists  ·  ${galleries.size} image sources",13f,theme.secondary))
+        artists.take(20).forEach{a->put(body,text("PIXIV  ·  ${a.label?:a.userId}  ·  ${a.archiveStatus}",12f))}
+        galleries.take(20).forEach{g->put(body,text("IMAGES  ·  ${g.displayName}",12f))}
+    }
+    private fun openFile(uri:String,mime:String){
+        runCatching{startActivity(Intent(Intent.ACTION_VIEW).apply{
+            setDataAndType(Uri.parse(uri),mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        })}.onFailure{toast("No app is available to open this file")}
+    }
+    private fun renderLibrary(){
+        section("My files","Downloaded images, videos and chapter ZIPs.")
+        val projection=arrayOf(MediaStore.Downloads._ID,MediaStore.Downloads.DISPLAY_NAME,
+            MediaStore.Downloads.RELATIVE_PATH,MediaStore.Downloads.SIZE)
+        runCatching{
+            contentResolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,projection,
+                null,null,"${MediaStore.Downloads.DATE_ADDED} DESC")?.use{c->
+                var count=0
+                while(c.moveToNext()&&count<100){
+                    val dir=c.getString(2).orEmpty()
+                    if(!listOf("VideoFlow","Kuroha","NocturnePixiv","GalleryFlow",
+                            "NocturneGallery","AsterionDownloader").any{dir.contains(it,true)})
+                        continue
+                    val item=card()
+                    val name=c.getString(1).orEmpty()
+                    val id=c.getLong(0)
+                    val uri=ContentUris.withAppendedId(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,id)
+                    put(item,text(name,14f,theme.white,true),0)
+                    put(item,text("${dir} · ${c.getLong(3)/1024} KB",11f,theme.secondary))
+                    put(item,button("OPEN"){
+                        openFile(uri.toString(),if(name.endsWith(".zip",true))
+                            "application/zip" else if(name.endsWith(".mp4",true))
+                            "video/*" else "image/*")
+                    })
+                    put(body,item,8);count++
+                }
+                if(count==0)put(body,text("No visible downloaded media yet.",13f,theme.secondary))
+            }
+        }.onFailure{put(body,text("Library could not be read: ${it.message}",12f,theme.danger))}
+    }
+    private fun renderSources(){
+        section("Monitored sources","Pixiv artists, image sites, video accounts and name searches.")
+        put(body,button("SCAN X PHOTOS"){XPhotoEngine.start(this)})
+        val watches=VideoDb(this).use{it.listWatches()}
+        for(w in watches){
+            val c=card()
+            put(c,text(w.label,14f,theme.white,true),0)
+            put(c,text(w.address,11f,theme.secondary))
+            put(c,button(if(w.enabled)"PAUSE SOURCE" else "ENABLE SOURCE"){
+                VideoDb(this).use{it.enableWatch(w.id,!w.enabled)};render()
+            })
+            put(body,c,9)
+        }
+        NameWatchDb(this).use{db->
+            for(w in db.list()){
+                val c=card()
+                put(c,text("NAME · ${w.name}",14f,theme.white,true),0)
+                put(c,text(if(w.source.isBlank())"Internet Archive public search"
+                    else w.source,11f,theme.secondary))
+                if(w.lastError!=null)put(c,text(w.lastError,11f,theme.danger))
+                put(c,button(if(w.enabled)"PAUSE SEARCH" else "ENABLE SEARCH"){
+                    db.setEnabled(w.id,!w.enabled);render()
+                })
+                put(body,c,9)
+            }
+        }
+        put(body,button("SCAN ENABLED SOURCES"){VideoEngine.launch(this,true)})
+        val discoveries=SearchResultsDb(this).use{it.list(60)}
+        if(discoveries.isNotEmpty()){
+            put(body,text("SEARCH RESULTS",17f,theme.white,true),21)
+            put(body,text("Candidates include original source URLs. A result is not a completed download.",12f,theme.secondary))
+            for(hit in discoveries){
+                val c=card()
+                put(c,text(hit.title,14f,theme.white,true),0)
+                put(c,text("${hit.source} · ${hit.query} · relevance ${hit.score}",
+                    11f,theme.secondary))
+                put(c,text(hit.url,11f,theme.subdued))
+                if(!hit.queued)put(c,button("QUEUE THIS VIDEO"){
+                    val added=VideoDb(this).use{it.addVideo(hit.url,hit.title)}
+                    if(added){
+                        SearchResultsDb(this).use{it.markQueued(hit.query,hit.url)}
+                        VideoEngine.launch(this,false)
+                    }
+                    toast(if(added)"Video queued" else "Already in video download history")
+                    render()
+                })
+                put(body,c,9)
+            }
+        }
+    }
+    private fun renderSettings(){
+        section("Settings","Search sources, Tor connection and download quality.")
+        val netPrefs=getSharedPreferences("video_options",MODE_PRIVATE)
+        val tor=Switch(this).apply{
+            text="Use Orbot / Tor for hidden (.onion) sites"
+            setTextColor(theme.white)
+            isChecked=netPrefs.getBoolean("tor_proxy",false)
+            setOnCheckedChangeListener{_,value->
+                netPrefs.edit().putBoolean("tor_proxy",value).apply()
+            }
+        }
+        put(body,tor)
+        val prefs=getSharedPreferences("video_options",MODE_PRIVATE)
+        put(body,text("VIDEO DISCOVERY",16f,theme.white,true),11)
+        put(body,text("Search runs across integrated video sites and your saved video watches automatically. No search-provider setup is needed.",
+            12f,theme.secondary),6)
+        put(body,button("MANAGE SAVED SEARCHES"){page="Sources";render()})
+        val quality=card()
+        put(quality,text("VIDEO QUALITY",14f,theme.white,true),0)
+        val choices=listOf("Best MP4","Best available","1080p max","720p max","Audio only")
+        val values=listOf("best[ext=mp4]/best","best",
+            "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+            "bestvideo[height<=720]+bestaudio/best[height<=720]","bestaudio/best")
+        val spinner=Spinner(this)
+        spinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_dropdown_item,choices)
+        spinner.setSelection(values.indexOf(prefs.getString("quality",values[0])).coerceAtLeast(0))
+        put(quality,spinner)
+        put(quality,button("SAVE QUALITY"){
+            prefs.edit().putString("quality",values[spinner.selectedItemPosition]).apply()
+            toast("Quality saved")
+        })
+        put(body,quality)
+        val settings=card()
+        put(settings,text("ADVANCED SOURCE SETTINGS",14f,theme.white,true),0)
+        put(settings,button("Pixiv login, following feed and filters"){
+            startActivity(Intent(this,MainActivity::class.java))
+        })
+        put(settings,button("Gallery sites, tag filters and backfill"){
+            startActivity(Intent(this,com.azrael.galleryflow.MainActivity::class.java))
+        })
+        put(settings,button("Video cookies, schedule and Round Sync"){
+            startActivity(Intent(this,com.asterion.videoflow.MainActivity::class.java))
+        })
+        put(body,settings,12)
+        put(body,text("Cloud uploads are not marked verified without confirmation from the destination. Originals are retained.",12f,theme.secondary))
+    }
+}
