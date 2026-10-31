@@ -180,12 +180,16 @@ object AsterionAccountPanels {
             17f,ui.white,true),0)
         val input=entry(a,"Creator / gallery URL")
         add(a,creator,input)
-        action(a,creator,"SIGN IN TO THIS WEBSITE",false){
+        action(a,creator,"CONNECT SITE ACCOUNT",false){
             val url=input.text.toString().trim()
-            if(com.azrael.galleryflow.SiteSession.validLoginUrl(url))
+            if(!com.azrael.galleryflow.SiteSession.validLoginUrl(url)){
+                say(a,"Enter a secure HTTPS website URL above")
+            }else if(com.azrael.galleryflow.SiteSession.bound(a,url)){
+                say(a,"This website is already connected. Manage it below.")
+            }else{
                 a.startActivity(Intent(a,com.azrael.galleryflow.SiteLoginActivity::class.java)
                     .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,url))
-            else say(a,"Enter a secure HTTPS website URL above")
+            }
         }
         action(a,creator,"FOLLOW & SYNC",true){
             val url=input.text.toString().trim()
@@ -217,7 +221,22 @@ object AsterionAccountPanels {
             add(a,c,ui.text(a,entity.canonicalUrl.take(110),12f,ui.secondary),4)
             if(com.azrael.galleryflow.SiteSession.cookie(entity.canonicalUrl)!=null)
                 add(a,c,ui.text(a,"Website session cookies available",12f,ui.primary),4)
-            action(a,c,"CONNECT / REFRESH SITE LOGIN",false){
+            val bound=com.azrael.galleryflow.SiteSession.bound(a,entity.canonicalUrl)
+            if(bound){
+                add(a,c,ui.text(a,"Account bound",13f,ui.primary,true),4)
+                action(a,c,"MANAGE CONNECTION",false){
+                    android.app.AlertDialog.Builder(a).setTitle(entity.displayName)
+                        .setItems(arrayOf("Refresh session","Disconnect account")){_,choice->
+                            if(choice==0){
+                                a.startActivity(Intent(a,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                                    .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,entity.canonicalUrl))
+                            }else{
+                                com.azrael.galleryflow.SiteSession.disconnect(a,entity.canonicalUrl)
+                                refresh()
+                            }
+                        }.show()
+                }
+            }else action(a,c,"SIGN IN TO ACCOUNT",false){
                 val address=entity.canonicalUrl
                 if(com.azrael.galleryflow.SiteSession.validLoginUrl(address))
                     a.startActivity(Intent(a,com.azrael.galleryflow.SiteLoginActivity::class.java)
@@ -251,6 +270,29 @@ object AsterionAccountPanels {
         add(a,summary,ui.text(a,
             "Only images are downloaded from X. Videos are not mixed into this archive.",
             12f,ui.secondary))
+        val accountUrl="https://x.com/"
+        val xBound=com.azrael.galleryflow.SiteSession.bound(a,accountUrl)
+        add(a,summary,ui.text(a,if(xBound)"X account bound" else "X account not connected",
+            14f,if(xBound)ui.primary else ui.secondary,true))
+        if(!xBound){
+            action(a,summary,"SIGN IN TO X",true){
+                a.startActivity(Intent(a,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                    .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,accountUrl))
+            }
+        }else{
+            action(a,summary,"MANAGE X ACCOUNT",false){
+                android.app.AlertDialog.Builder(a).setTitle("X account connection")
+                    .setItems(arrayOf("Refresh connection","Disconnect X account")){_,choice->
+                        if(choice==0){
+                            a.startActivity(Intent(a,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                                .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,accountUrl))
+                        }else{
+                            com.azrael.galleryflow.SiteSession.disconnect(a,accountUrl)
+                            refresh()
+                        }
+                    }.show()
+            }
+        }
         action(a,summary,"SYNC ALL X ACCOUNTS",true){
             XPhotoEngine.start(a);say(a,"Checking X photo accounts")
         }
