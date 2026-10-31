@@ -1,8 +1,16 @@
-# Asterion Downloader phone-preserving APK builds
+# Asterion Downloader — preservation-compatible Android APKs
 
-Asterion Downloader v1.3.9 preview. Package: com.azrael.pixivdumpsync.nocturne. Same preview certificate SHA-256: 9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad.
+## v1.3.11-preview
+- APK: `
+Asterion-Downloader-v1.3.11-Preserve-Data.apk
+`
+- Package: `com.azrael.pixivdumpsync.nocturne`
+- Version code: `40`
+- Signing certificate SHA-256: `9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad`
+- APK SHA-256: `
+4a70ad798b79fbbc3a0c7c1c411b20f9c48c88b14b4c957da17e32183489eb31
+`
 
-APK SHA-256: $checksum.
+Supports in-place update over the preview built with this signing certificate. **Do not uninstall** the preview or original Kuroha. Production remains separate.
 
-Do not uninstall the existing preview; use a compatible in-place update. Original production app com.azrael.pixivdumpsync remains separate.
-\nVersion v1.3.10 signed installer (package com.azrael.pixivdumpsync.nocturne, code 39): SHA-256 $sha. Same certificate as previous preview; original production app untouched.\n
+Previous installers are retained in this branch.
