@@ -108,6 +108,27 @@ object ChapterArchives {
                 return
             }catch(t:Exception){
                 cause=t;partial.delete()
+                if(t.message.orEmpty().contains("403") &&
+                    com.azrael.galleryflow.SiteSession.bound(context,referer)){
+                    try {
+                        BrowserImageFetch.download(context,url,referer,partial)
+                        val bounds=android.graphics.BitmapFactory.Options().apply{
+                            inJustDecodeBounds=true
+                        }
+                        android.graphics.BitmapFactory.decodeFile(partial.absolutePath,bounds)
+                        require(bounds.outWidth>0&&bounds.outHeight>0) {
+                            "Browser delivered an invalid image"
+                        }
+                        require(partial.renameTo(target)) {
+                            "Unable to save verified browser image"
+                        }
+                        return
+                    }catch(browserError:Exception){
+                        partial.delete()
+                        throw IllegalStateException(
+                            "Browser image retrieval failed: "+browserError.message,browserError)
+                    }
+                }
                 if(attempt<3)Thread.sleep((attempt+1)*750L)
             }
         }
