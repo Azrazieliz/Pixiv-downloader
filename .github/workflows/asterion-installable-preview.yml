@@ -33,18 +33,18 @@ jobs:
           APK=app/build/outputs/apk/preview/app-preview.apk
           test -s "$APK"
           unzip -t "$APK" >/dev/null
-          cp "$APK" Asterion-Downloader-v1.3.9-Preview.apk
-          sha256sum Asterion-Downloader-v1.3.9-Preview.apk > Asterion-Downloader-v1.3.9-Preview.sha256
+          cp "$APK" Asterion-Downloader-v1.3.10-Preview.apk
+          sha256sum Asterion-Downloader-v1.3.10-Preview.apk > Asterion-Downloader-v1.3.10-Preview.sha256
       - name: Publish prerelease for direct installation
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create asterion-downloader-v1.3.9-preview-20261030 \
-            Asterion-Downloader-v1.3.9-Preview.apk \
-            Asterion-Downloader-v1.3.9-Preview.sha256 \
+          gh release create asterion-downloader-v1.3.10-preview-20261030 \
+            Asterion-Downloader-v1.3.10-Preview.apk \
+            Asterion-Downloader-v1.3.10-Preview.sha256 \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Asterion Downloader v1.3.9 — Preview" \
+            --title "Asterion Downloader v1.3.10 — Preview" \
             --notes "Co-installable Android preview. Does NOT replace the original signed production app. Four icon home plus dedicated Kyora, original Kuroha Pixiv interface, X/site account binding, strict site-based video search with previews and a new orbital logo. Co-installable preview only; production app untouched." \
             --prerelease
