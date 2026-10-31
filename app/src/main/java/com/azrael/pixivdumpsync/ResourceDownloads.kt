@@ -77,18 +77,22 @@ object ResourceDownloads {
         if(games){
             files.addView(ui.text(a,"ANDROID VN COMPATIBILITY",15f,ui.white,true),ui.lp(a,12))
             files.addView(ui.text(a,
-                "HTML5 visual-novel ZIPs with an index.html can run in this app. "+
-                "Ren'Py source projects require Ren'Py/RAPT packaging; "+
-                "Windows-only EXE titles and Kirikiri/NScripter games require a compatible runtime, and cannot be converted by renaming a ZIP.",
+                "Export ZIP game assets to Downloads/AsterionDownloader/Games for independent Android runtimes. "+
+                "JoiPlay supports many Ren'Py and HTML5 games with its plugins. "+
+                "Native Android APKs install separately. Ren'Py/RAPT builds actual standalone Android packages; Windows-only EXEs cannot all be converted.",
                 12f,ui.secondary),ui.lp(a,7))
-            files.addView(action(a,"OPEN OFFLINE HTML5 VN ZIP"){
+            files.addView(action(a,"EXPORT GAME ZIP FOR EXTERNAL ANDROID PLAYER"){
                 val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     type="application/zip"
                     addCategory(Intent.CATEGORY_OPENABLE)
                 }
                 a.startActivityForResult(intent,5203)
             },ui.lp(a,10))
-            files.addView(action(a,"REN'PY ANDROID PACKAGING GUIDE"){
+            files.addView(action(a,"GET EXTERNAL ANDROID VN PLAYER"){
+                a.startActivity(Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://www.joiplay.net/")))
+            },ui.lp(a,7))
+            files.addView(action(a,"REN'PY STANDALONE APK PACKAGING"){
                 a.startActivity(Intent(Intent.ACTION_VIEW,
                     Uri.parse("https://www.renpy.org/doc/html/android.html")))
             },ui.lp(a,7))
@@ -115,9 +119,7 @@ object ResourceDownloads {
                 if(it.moveToFirst())it.getString(0) else null
             }}.getOrNull().orEmpty()
         if(request==5203){
-            a.startActivity(Intent(a,OfflineVnActivity::class.java).apply{
-                data=uri;addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            })
+            PortableGameExporter.export(a,uri,name.ifBlank{"game.zip"})
             return
         }
         val lower=name.lowercase()
