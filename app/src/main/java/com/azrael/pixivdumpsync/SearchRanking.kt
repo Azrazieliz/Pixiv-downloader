@@ -69,6 +69,7 @@ object SearchRanking {
         val host=uri.host.orEmpty().lowercase(Locale.ROOT)
         val query=uri.query.orEmpty().lowercase(Locale.ROOT)
         if(path.matches(Regex("(?i).*/(?:search|category|categories|tag|tags|user|users|channel|channels|playlist|playlists)(?:/.*)?$")))return false
+        if(host.contains("xvideos.com") && Regex("^/video(?:[._0-9]|/)").containsMatchIn(path))return true
         if(host.contains("pornhub.com") && path=="/view_video.php")
             return query.contains("viewkey=")
         if(host.contains("youtube.com")&&path=="/watch")
