@@ -20,10 +20,14 @@ object XPhotoEngine {
     private fun json(url:String):JSONObject {
         val response=Jsoup.connect(url).ignoreContentType(true)
             .timeout(30000).maxBodySize(12_000_000).execute()
-        require(response.statusCode() in 200..299){
-            "X media metadata HTTP ${response.statusCode()}"}
         val value=JSONObject(response.body())
-        require(value.optInt("code",200) in 200..299) {
+        // FxTwitter explicitly reports an empty media timeline with HTTP 404
+        // and {"results":[], "cursor":...}. This is not a network error.
+        val emptyTimeline=response.statusCode()==404 &&
+            value.optJSONArray("results")!=null
+        require(response.statusCode() in 200..299 || emptyTimeline){
+            "X media metadata HTTP ${response.statusCode()}"}
+        require(value.optInt("code",200) in 200..299 || emptyTimeline) {
             value.optString("message","X media API unavailable")
         }
         return value
@@ -50,14 +54,28 @@ object XPhotoEngine {
             enqueuePhotos(db,source,post)
             return
         }
-        var cursor=initialCursor
         val visited=HashSet<String>()
-        // A bounded session with a persisted cursor; subsequent jobs continue backfill.
-        for(page in 0 until 20) {
+        fun getPage(cursor:String?):JSONObject{
             val target="https://api.fxtwitter.com/2/profile/$handle/media?count=100"+
                 (if(cursor.isNullOrBlank())"" else
                     "&cursor="+URLEncoder.encode(cursor,"UTF-8"))
-            val root=json(target)
+            return json(target)
+        }
+        // Always examine the newest posts first. The saved cursor is exclusively
+        // the older-content backfill position and must not suppress live sync.
+        val latest=getPage(null)
+        val newest=latest.optJSONArray("results")
+        if(newest!=null){
+            for(i in 0 until newest.length()){
+                val post=newest.optJSONObject(i)?:continue
+                enqueuePhotos(db,source,post)
+            }
+        }
+        var cursor=initialCursor?:latest.optJSONObject("cursor")
+            ?.optString("bottom")?.takeIf{it.isNotBlank()}
+        for(page in 0 until 20){
+            if(cursor.isNullOrBlank()||!visited.add(cursor))break
+            val root=getPage(cursor)
             val list=root.optJSONArray("results")?:error("X media list missing")
             for(i in 0 until list.length()){
                 val post=list.optJSONObject(i)?:continue
@@ -66,7 +84,6 @@ object XPhotoEngine {
             val next=root.optJSONObject("cursor")?.optString("bottom")
                 ?.takeIf{it.isNotBlank()}
             db.cursor(source,handle,next)
-            if(next==null||!visited.add(next))break
             cursor=next
         }
     }
