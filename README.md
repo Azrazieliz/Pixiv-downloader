@@ -5,3 +5,4 @@ Asterion Downloader v1.3.9 preview. Package: com.azrael.pixivdumpsync.nocturne. 
 APK SHA-256: $checksum.
 
 Do not uninstall the existing preview; use a compatible in-place update. Original production app com.azrael.pixivdumpsync remains separate.
+\nVersion v1.3.10 signed installer (package com.azrael.pixivdumpsync.nocturne, code 39): SHA-256 $sha. Same certificate as previous preview; original production app untouched.\n
