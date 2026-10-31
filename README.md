@@ -12,3 +12,13 @@ Asterion-Downloader-v1.3.12-Preserve-Data.apk
 **Preserve data:** install over the existing preview. Never uninstall it or original production Kuroha.
 
 Previous signed APK versions are retained in this artifact branch.
+
+## v1.3.13-preview — 2026-10-31
+- APK: `Asterion-Downloader-v1.3.13-Preserve-Data.apk`
+- Package: `com.azrael.pixivdumpsync.nocturne` · version code `42`
+- Certificate SHA-256: `9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad`
+- APK SHA-256: `
+97ed5e0acb869787f06a1e5c99f8c846a13b4bb29c075a1d6cb1ddab4ead6c3e
+`
+- CI verified; auto X-following traversal, scoped video search, MangaRead, Toonily browser-retry updates.
+- In-place APK update preserves installed Nocturne app data, and original Kuroha is separate.
