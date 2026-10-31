@@ -87,7 +87,7 @@ object SearchRanking {
         val head=title.lowercase(Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]+")," ")
         val body=description.lowercase(Locale.ROOT)
         val titleMatches=words.count{head.contains(it)}
-        val required=when(words.size){1->1;2->2;else->(words.size*0.75).toInt().coerceAtLeast(2)}
+        val required=when(words.size){1->1;2->2;3->3;4->4;else->kotlin.math.ceil(words.size*0.8).toInt()}
         if(titleMatches<required)return 0
         val phrase=query.trim().lowercase(Locale.ROOT)
         return titleMatches*30+
