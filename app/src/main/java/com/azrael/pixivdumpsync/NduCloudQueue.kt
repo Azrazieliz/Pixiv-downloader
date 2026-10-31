@@ -32,7 +32,7 @@ class NduCloudQueue(context: Context) :
     override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int) = Unit
 
     @Synchronized fun enqueue(category:String,name:String,uri:Uri) {
-        require(category=="kyora" || category=="kuroha")
+        require(category in setOf("kuroha","kyora","x","comics","videos"))
         NduTeraboxClient.safeFileName(name)
         require(uri.scheme=="content") { "Only locally owned files may be queued" }
         val row=ContentValues().apply {
@@ -124,6 +124,26 @@ class NduCloudQueue(context: Context) :
                     if(uri?.scheme=="content") {
                         runCatching { enqueue("kyora",name,uri);count++ }
                     }
+                }
+            }
+        }
+        // Flat local downloads for X, comics and VideoFlow are also uploaded.
+        val ownedFolders=listOf(
+            "x" to "Download/AsterionDownloader/X/",
+            "comics" to "Download/AsterionDownloader/Comics/",
+            "videos" to "Download/VideoFlow/"
+        )
+        for((category,relative) in ownedFolders) {
+            ctx.contentResolver.query(MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(android.provider.BaseColumns._ID,
+                    MediaStore.MediaColumns.DISPLAY_NAME),
+                MediaStore.MediaColumns.RELATIVE_PATH+"=?",
+                arrayOf(relative),null)?.use { cursor->
+                while(cursor.moveToNext()){
+                    val name=cursor.getString(1)?:continue
+                    val uri=android.content.ContentUris.withAppendedId(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,cursor.getLong(0))
+                    runCatching{enqueue(category,name,uri);count++}
                 }
             }
         }
