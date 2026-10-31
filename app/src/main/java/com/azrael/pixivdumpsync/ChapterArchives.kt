@@ -50,6 +50,12 @@ object ChapterArchives {
                             onStatus("${job.title}: $pct%")
                         }
                         db.update(job.id,"done",100,savedUri=uri)
+                        if(NduSettings.configured(context)) {
+                            NduCloudQueue(context).use { queue->
+                                queue.enqueue("comics",safeName(job.title)+".zip",Uri.parse(uri))
+                            }
+                            NduUploadService.launch(context)
+                        }
                         onStatus("Saved ${job.title}")
                     }catch(t:Exception){
                         db.update(job.id,"error",job.progress,t.message?:"Unknown failure")
