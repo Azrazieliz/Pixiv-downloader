@@ -90,6 +90,16 @@ class AsterionHomeActivity:Activity(){
             tabs.addView(t,LinearLayout.LayoutParams(0,-2,1f))
         }
         root.addView(tabs)
+        // Android 15+ enforces edge-to-edge: keep the status/navigation bars clear.
+        if(android.os.Build.VERSION.SDK_INT>=30){
+            root.setOnApplyWindowInsetsListener{_,insets->
+                val status=insets.getInsets(android.view.WindowInsets.Type.statusBars())
+                val navigation=insets.getInsets(android.view.WindowInsets.Type.navigationBars())
+                head.setPadding(dp(14),dp(12)+status.top,dp(14),dp(12))
+                tabs.setPadding(dp(5),dp(7),dp(5),dp(7)+navigation.bottom)
+                insets
+            }
+        }
         setContentView(root)
         window.decorView.systemUiVisibility=0
         when(intent?.action){
@@ -322,8 +332,19 @@ class AsterionHomeActivity:Activity(){
                     13f,theme.secondary))
             for(hit in hits.take(25)){
                 val c=card()
-                put(c,text(hit.title,15f,theme.white,true),0)
-                put(c,text(hit.source+" · "+hit.query,12f,theme.secondary))
+                if(hit.thumbnail!=null){
+                    val thumbnail=ImageView(this).apply{
+                        minHeight=dp(124)
+                        setBackgroundColor(theme.raised)
+                        adjustViewBounds=true
+                        layoutParams=LinearLayout.LayoutParams(-1,dp(160))
+                    }
+                    put(c,thumbnail,0)
+                    VideoSearchPreviews.display(this,thumbnail,hit.thumbnail)
+                }
+                put(c,text(hit.title,16f,theme.white,true),8)
+                put(c,text(hit.source+" · Video result",12f,theme.primary))
+                put(c,text(hit.url.take(120),11f,theme.subdued))
                 if(!hit.queued){
                     put(c,button("DOWNLOAD THIS RESULT"){
                         val added=VideoDb(this).use{it.addVideo(hit.url,hit.title)}
