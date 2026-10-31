@@ -14,7 +14,7 @@ import java.net.URLEncoder
  * mirrors, and Tor-reachable sources. No preconfigured site-category blacklist.
  * Discovery is metadata-based; it does not bypass protected streams or DRM.
  */
-enum class VideoSearchArea { ALL, GENERAL, ADULT, SAVED, HIDDEN }
+enum class VideoSearchArea { ALL, ADULT, SAVED }
 
 object KeywordSources {
     private const val PREFS="asterion_keyword_sources"
@@ -28,8 +28,6 @@ object KeywordSources {
         "html|https://www.pornhub.com/video/search?search={query}|Pornhub",
         "html|https://www.xvideos.com/?k={query}|XVideos",
         "html|https://xhamster.com/search/{query}|xHamster",
-        "html|https://www.dailymotion.com/search/{query}/videos|Dailymotion",
-        "html|https://www.youtube.com/results?search_query={query}|YouTube",
         "html|https://www.xnxx.com/search/{query}|XNXX",
         "html|https://www.eporner.com/search/{query}/|Eporner",
         "html|https://spankbang.com/s/{query}/|SpankBang",
@@ -62,13 +60,9 @@ object KeywordSources {
                 url?.let { SearchProvider(SearchProviderKind.HTML,it,watch.label) }
             }
         }}.getOrDefault(emptyList())
-        val hidden=runCatching { com.asterion.videoflow.VideoDb(context).use { db->
-            db.listWatches().filter { it.enabled && it.address.contains(".onion") &&
-                it.address.contains("{query}") }.map { watch->
-                SearchProvider(SearchProviderKind.HTML, watch.address, watch.label)
-            }
-        }}.getOrDefault(emptyList())
-        return (direct+dynamic+hidden).distinctBy{it.url}
+        // No hidden-network searches or unrequested mainstream catalogs.
+        // User-saved supported sites remain eligible even outside built-in sites.
+        return (direct+dynamic).distinctBy{it.url}
     }
     fun setSources(context:Context,lines:String){
         SearchRanking.parseProviders(lines) // Reject invalid values before persistence.
@@ -168,7 +162,6 @@ object KeywordSources {
         require(keyword.trim().isNotBlank()){"Enter a search term"}
         val adult=setOf("pornhub.com","xvideos.com","xhamster.com",
             "xnxx.com","eporner.com","spankbang.com","redtube.com")
-        val general=setOf("youtube.com","dailymotion.com")
         val savedHosts=runCatching{com.asterion.videoflow.VideoDb(context).use{db->
             db.listWatches().filter{it.enabled}.mapNotNull { watch->
                 runCatching{URI(watch.address).host?.lowercase()?.removePrefix("www.")}
@@ -181,15 +174,13 @@ object KeywordSources {
                     .lowercase().removePrefix("www.")
             }.getOrDefault("")
             when(area){
-                VideoSearchArea.ALL -> !host.endsWith(".onion")
-                VideoSearchArea.GENERAL -> host in general
+                VideoSearchArea.ALL -> host in adult || host in savedHosts
                 VideoSearchArea.ADULT -> host in adult
                 VideoSearchArea.SAVED -> host in savedHosts
-                VideoSearchArea.HIDDEN -> host.endsWith(".onion")
             }
         }
         if(providers.isEmpty())return SearchOutcome(emptyList(),0,
-            listOf("No accessible sites for this search area. Add a saved video site or configure Tor for hidden services."))
+            listOf("No accessible video sites in this category. Save a supported video website and try again."))
         val pool=java.util.concurrent.Executors.newFixedThreadPool(minOf(6,providers.size))
         val completion=java.util.concurrent.ExecutorCompletionService<
             Triple<String,List<RankedHit>,String?>>(pool)

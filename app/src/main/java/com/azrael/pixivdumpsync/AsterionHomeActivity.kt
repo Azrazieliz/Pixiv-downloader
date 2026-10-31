@@ -354,6 +354,15 @@ class AsterionHomeActivity:Activity(){
             val value=clip.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
             if(value.isNotBlank())input.setText(value) else toast("Clipboard is empty")
         })
+        put(byLink,button("SIGN IN TO A VIDEO WEBSITE"){
+            val address=input.text.toString().trim()
+            if(!com.azrael.galleryflow.SiteSession.validLoginUrl(address)){
+                toast("Paste the HTTPS website or video URL first");return@button
+            }
+            startActivity(Intent(this,com.azrael.galleryflow.SiteLoginActivity::class.java)
+                .putExtra(com.azrael.galleryflow.SiteLoginActivity.EXTRA_URL,address))
+        })
+        put(byLink,text("Signed-in downloads can use the access already available to your account. The app cannot unlock another website's paid content.",12f,theme.secondary))
         put(body,byLink,12)
 
         val byName=card()
@@ -366,13 +375,16 @@ class AsterionHomeActivity:Activity(){
         put(byName,query)
         put(byName,text("SEARCH AREA",12f,theme.secondary,true),9)
         val scopes=listOf(
-            "All sites" to VideoSearchArea.ALL,
-            "Mainstream" to VideoSearchArea.GENERAL,
-            "Adult" to VideoSearchArea.ADULT,
-            "Saved sites" to VideoSearchArea.SAVED,
-            "Tor / hidden" to VideoSearchArea.HIDDEN
+            "Adult + my sites" to VideoSearchArea.ALL,
+            "Adult sites" to VideoSearchArea.ADULT,
+            "My saved sites" to VideoSearchArea.SAVED
         )
-        val activeArea=text("Selected: "+searchPrefs.getString("area","ALL"),12f,theme.primary)
+        val selectedArea=searchPrefs.getString("area","ADULT").orEmpty()
+            .takeIf{it in listOf("ALL","ADULT","SAVED")} ?: "ADULT"
+        if(selectedArea!=searchPrefs.getString("area",""))
+            searchPrefs.edit().putString("area",selectedArea).apply()
+        val activeArea=text("Selected: "+scopes.firstOrNull{it.second.name==selectedArea}
+            ?.first.orEmpty().ifBlank{"Adult sites"},12f,theme.primary)
         put(byName,activeArea,3)
         for(group in scopes.chunked(3)){
             val r=theme.row(this)
@@ -404,7 +416,7 @@ class AsterionHomeActivity:Activity(){
                 val outcome=runCatching{KeywordSources.searchDetailed(applicationContext,value,
                     runCatching{VideoSearchArea.valueOf(
                         searchPrefs.getString("area","ALL") ?: "ALL")}
-                        .getOrDefault(VideoSearchArea.ALL))}
+                        .getOrDefault(VideoSearchArea.ADULT))}
                 outcome.onSuccess { result->
                     SearchResultsDb(applicationContext).use{it.save(value,result.hits)}
                     val failures=result.failures.take(5).joinToString(" | ")

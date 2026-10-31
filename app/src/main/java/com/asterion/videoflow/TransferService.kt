@@ -122,6 +122,7 @@ object VideoEngine {
         require(!hidden||viaProxy){"Configure a SOCKS proxy before connecting to this source"}
         val cookie=File(context.filesDir,"videoflow/cookies.txt")
         require(WebDiscovery.isUrl(item.url)){"Only public HTTP(S) video URLs are supported"}
+        val connectedCookies=AuthorizedVideoSession.temporaryCookies(context,item.url)
         fun request(link:String, referer:String?=null)=
             YtDlpRequest(link).setOutputTemplate(template)
                 .addOption("--no-playlist").addOption("--continue")
@@ -136,7 +137,9 @@ object VideoEngine {
                 .apply {
                     if(viaProxy && hidden)addOption("--proxy", "socks5h://127.0.0.1:${prefs.getInt("tor_port",9050)}")
                     if(!referer.isNullOrBlank())addOption("--referer",referer)
-                    if(cookie.isFile&&cookie.length()>0)addOption("--cookies",cookie.absolutePath)
+                    val selected=connectedCookies?.takeIf{it.isFile&&it.length()>0}
+                        ?:cookie.takeIf{it.isFile&&it.length()>0}
+                    if(selected!=null)addOption("--cookies",selected.absolutePath)
                 }
         fun execute(link:String,referer:String?=null) {
             val response=YtDlp.execute(request(link,referer)){progress,_,_->
@@ -150,20 +153,25 @@ object VideoEngine {
         val variants=listOf(item.url)+SourceDiagnostics.alternateHosts(item.url)
         var last:Throwable?=null
         var downloaded=false
-        for(candidate in variants.distinct()) {
-            try {
-                execute(candidate)
-                downloaded=true
-                break
-            } catch(t:Exception) {last=t}
-            val media=if(viaProxy)null else runCatching{WebDiscovery.directMedia(candidate)}.getOrNull()
-            if(!media.isNullOrBlank()&&media!=candidate) {
+        try {
+            for(candidate in variants.distinct()) {
                 try {
-                    execute(media,candidate)
+                    execute(candidate)
                     downloaded=true
                     break
                 } catch(t:Exception) {last=t}
+                val media=if(viaProxy)null else runCatching{WebDiscovery.directMedia(candidate)}.getOrNull()
+                if(!media.isNullOrBlank()&&media!=candidate) {
+                    try {
+                        execute(media,candidate)
+                        downloaded=true
+                        break
+                    } catch(t:Exception) {last=t}
+                }
             }
+        } finally {
+            // Do not keep browser authentication in the file system after transfer.
+            connectedCookies?.delete()
         }
         if(!downloaded)throw (last?:IllegalStateException("No video extractor succeeded"))
         val file=parent.listFiles()?.filter { it.isFile && it.length()>0 &&
