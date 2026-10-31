@@ -29,11 +29,14 @@ class SearchRankingTest {
         assertEquals(1,result.size)
         assertEquals(original,result.first().url)
     }
-    @Test fun retainsLowRelevanceResultsButRanksMatchesFirst() {
+    @Test fun rejectsIrrelevantResultsAndNonvideoPages() {
         val result=SearchRanking.deduplicate("rare phrase",listOf(
             RankedHit("Other title","https://example.com/watch/2","mirror"),
             RankedHit("Rare Phrase recording","https://example.com/watch/1","index")))
-        assertEquals(2,result.size)
-        assertTrue(result[0].score>result[1].score)
+        assertEquals(1,result.size)
+        assertTrue(result[0].title.contains("Rare Phrase"))
+        assertFalse(SearchRanking.isVideoUrl("https://example.com/category/rare-phrase"))
+        assertTrue(SearchRanking.isVideoUrl("https://www.pornhub.com/view_video.php?viewkey=abc"))
+        assertFalse(SearchRanking.isVideoUrl("https://www.pornhub.com/video/search?search=rare"))
     }
 }
