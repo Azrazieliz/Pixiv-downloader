@@ -121,6 +121,12 @@ object XPhotoEngine {
                     try{
                         val saved=fetchPhoto(context,photo.photo)
                         db.change(photo.id,"done",saved)
+                        if(NduSettings.configured(context)){
+                            NduCloudQueue(context).use{it.enqueue("x",
+                                Uri.parse(saved).lastPathSegment.orEmpty().ifBlank{"x_"+photo.id+".jpg"},
+                                Uri.parse(saved))}
+                            NduUploadService.launch(context)
+                        }
                         onStatus("Saved X image")
                     }catch(t:Exception){
                         db.change(photo.id,"error",error=t.message)
