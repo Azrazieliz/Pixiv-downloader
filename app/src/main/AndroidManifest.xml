@@ -17,6 +17,7 @@
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity android:name=".LoginActivity" android:exported="false" />
         <activity android:name=".FollowingActivity" android:exported="false" />
+        <activity android:name=".XFollowingImportActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name="com.azrael.galleryflow.MainActivity" android:exported="false" />
         <activity android:name="com.azrael.galleryflow.SiteLoginActivity" android:exported="false" />
