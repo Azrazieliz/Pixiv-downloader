@@ -187,11 +187,26 @@ object KeywordSources {
                      area:VideoSearchArea):List<RankedHit> {
         val encoded=URLEncoder.encode(keyword,"UTF-8")
         val url=provider.url.replace("{query}",encoded).replace("{name}",encoded)
-        if(area==VideoSearchArea.HENTAI && provider.label=="Hanime")
-            return hanimeApi(context,keyword)
+        if(area==VideoSearchArea.HENTAI && provider.label=="Hanime"){
+            val direct=runCatching{hanimeApi(context,keyword)}
+            if(direct.isSuccess && direct.getOrDefault(emptyList()).isNotEmpty())
+                return direct.getOrThrow()
+            // Older integrations use an API host that may no longer resolve.
+            // Try the actual website HTML before declaring this source unavailable.
+            val fallback="https://hanime.tv/search?query="+encoded
+            val page=runCatching{connection(context,fallback).get()}
+            if(page.isFailure)
+                throw IllegalStateException("Hanime API and HTML search unavailable: "+
+                    (page.exceptionOrNull()?.message?:direct.exceptionOrNull()?.message))
+            return htmlPageHits(page.getOrThrow(),fallback,provider,keyword,area)
+        }
         if(area==VideoSearchArea.PIRACY_DARKWEB && provider.label=="Sukebei")
             return sukebeiRss(context,url)
         val doc=connection(context,url).get()
+        return htmlPageHits(doc,url,provider,keyword,area)
+    }
+    private fun htmlPageHits(doc:Document,url:String,provider:SearchProvider,
+        keyword:String,area:VideoSearchArea):List<RankedHit>{
         val found=ArrayList<RankedHit>()
         val selectors="li.pcVideoListItem a[href], .videoBox a[href], "+
             ".thumb-block a[href], [class*=video-thumb] a[href], "+
