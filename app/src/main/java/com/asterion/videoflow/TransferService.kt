@@ -81,6 +81,15 @@ object VideoEngine {
                         onStatus("${next.title}: $percent%")
                     }
                     db.update(next.id,"done",100,uri)
+                    if(com.azrael.pixivdumpsync.NduSettings.configured(context)){
+                        com.azrael.pixivdumpsync.NduCloudQueue(context).use{queue->
+                            queue.enqueue("videos",
+                                android.net.Uri.parse(uri).lastPathSegment.orEmpty()
+                                    .ifBlank{"video_"+next.id+".mp4"},
+                                android.net.Uri.parse(uri))
+                        }
+                        com.azrael.pixivdumpsync.NduUploadService.launch(context)
+                    }
                     onStatus("Saved ${next.title}")
                 } catch(t:Exception) {
                     db.scheduleRetry(next.id,t.message?:t.javaClass.simpleName)
