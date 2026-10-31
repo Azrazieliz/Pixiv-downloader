@@ -197,3 +197,34 @@
   safety checks, so only the independently installable CI APK is on the release.
   Do not suggest using that APK over the installed preview. Do not uninstall
   the existing original or preview to make it installable.
+
+
+## CANONICAL KYORA SOURCE — 2026-10-31 (supersedes erroneous placeholder assumption)
+
+- STOP inventing generic substitutes for supposedly missing 4KHD/Buondua
+  adapters. The user's original tested Kyora implementation exists in the
+  `Azrazieliz/Cosplay-Download` repository, on
+  `kyora-v0.6.1-premium-ui`, and is continued on
+  `feature/kyora-0.7-flat-terabox-15min-20261023`.
+- The real original `AdapterRegistry.kt` contains six adapters:
+  `BuonDuaAdapter`, `KiutakuAdapter`, `FourKGirlAdapter`,
+  `EveriaAdapter`, `FourKhdAdapter`, `CosplayTeleAdapter`.
+  Their implementations are in `CatalogAdapters.kt`,
+  `DirectSiteAdapters.kt`, and `KiutakuAdapter.kt`.
+- This original engine includes media kinds IMAGE/VIDEO/ARCHIVE, source-specific
+  gallery/pagination discovery, archive/resolver paths, and original
+  per-provider state. Its `MediaStoreFiles.kt` handles archiving and
+  extraction; import it *with its dependencies* and preserve flat output
+  semantics rather than dropping media-kind behavior in a generic adapter.
+- The `Cosplay-Download/main` branch is an older baseline with placeholders.
+  It is NOT canonical for the working Kyora engine. Do not infer active-site
+  status from that branch.
+- The synthetic `KyoraSiteAdapter.kt` added during this continuation is
+  **not canonical and must not be wired**. `AdapterRegistry.kt` was
+  restored to the earlier unified branch's original content at commit
+  `3eabb1fc95fb3e6f2c69bcab18dbedc5180f85f7`. This rollback
+  passed Android CI. Preserve real adapter originals and test migration
+  before enabling all six.
+- Never delete/clear the current production or preview apps, their databases,
+  account cookies, or local NDUS encryption key. Changes to X/TeraBox/Toonily
+  are separate and must not be represented as a replacement for Kyora.
