@@ -12,6 +12,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
 import android.widget.LinearLayout
+import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import com.azrael.galleryflow.SiteSession
@@ -48,9 +49,38 @@ class XFollowingImportActivity:Activity(){
                 ui.px(this@XFollowingImportActivity,10),ui.px(this@XFollowingImportActivity,10))
         }
         layout.addView(ui.text(this,"X · My Following",21f,ui.white,true))
-        label=ui.text(this,"Open your X profile, tap Following. Visible accounts are collected as you scroll.",
+        label=ui.text(this,"Home's Following feed is not your Following accounts list. Open your profile, then its Following list; scroll to capture accounts.",
             13f,ui.secondary)
         layout.addView(label,ui.lp(this,8))
+        val ownHandle=EditText(this).apply{
+            hint="Your X username (not a followed artist)"
+            setSingleLine(true)
+            textSize=14f
+            setTextColor(ui.white)
+            setHintTextColor(ui.subdued)
+            background=ui.shape(this@XFollowingImportActivity,ui.raised,12)
+            setPadding(ui.px(this@XFollowingImportActivity,14),ui.px(this@XFollowingImportActivity,9),
+                ui.px(this@XFollowingImportActivity,14),ui.px(this@XFollowingImportActivity,9))
+        }
+        layout.addView(ownHandle,ui.lp(this,6))
+        layout.addView(ui.action(this,"OPEN MY FOLLOWING ACCOUNT LIST",true){
+            val handle=ownHandle.text.toString().trim().removePrefix("@")
+            if(validHandle(handle)){
+                browser.loadUrl("https://x.com/"+handle+"/following")
+            }else{
+                browser.evaluateJavascript("""(function(){
+                    const a=document.querySelector('a[data-testid="AppTabBar_Profile_Link"]');
+                    return a?a.getAttribute('href'):'';
+                })()"""){raw->
+                    val found=raw.trim('"').trim('/').substringBefore('/')
+                    if(validHandle(found))
+                        browser.loadUrl("https://x.com/"+found+"/following")
+                    else Toast.makeText(this,
+                        "Enter your own X username above to open the account list.",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+        },ui.lp(this,7))
         browser=WebView(this).apply{
             settings.javaScriptEnabled=true
             settings.domStorageEnabled=true
@@ -68,6 +98,22 @@ class XFollowingImportActivity:Activity(){
             }
         }
         layout.addView(browser,LinearLayout.LayoutParams(-1,0,1f).apply{weight=1f})
+        layout.addView(ui.action(this,"OPEN MY FOLLOWING LIST",false) {
+            browser.evaluateJavascript("""(function(){
+              const links=[...document.querySelectorAll('a[href]')];
+              const p=links.find(a=>a.getAttribute('data-testid')==='AppTabBar_Profile_Link') ||
+                  links.find(a=>a.getAttribute('aria-label')?.toLowerCase()==='profile');
+              const path=p?.getAttribute('href');
+              if(path && /^\/[A-Za-z0-9_]{1,15}\/?$/.test(path)){
+                  window.location.href='https://x.com'+path.replace(/\/$/,'')+'/following';
+                  return 'opened';
+              }
+              return 'manual';
+            })()"""){ result ->
+                if(result.contains("manual"))
+                    Toast.makeText(this,"Open your own profile in X, then tap its Following count.",Toast.LENGTH_LONG).show()
+            }
+        },ui.lp(this,5))
         importButton=ui.action(this,"IMPORT FOLLOWED ACCOUNTS",true){
             if(discovered.isEmpty()){
                 Toast.makeText(this,"No accounts detected. Open the Following list.",Toast.LENGTH_LONG).show()
@@ -100,7 +146,9 @@ class XFollowingImportActivity:Activity(){
             }.getOrDefault(emptyList())
             runOnUiThread{
                 for(handle in handles)if(validHandle(handle))discovered.add(handle)
-                label.text="${discovered.size} accounts found. Continue scrolling to collect more, then import."
+                label.text=if(discovered.isEmpty())
+                    "No accounts found. Open your profile Following ACCOUNT LIST, not the home Following timeline."
+                    else discovered.size.toString()+" followed accounts detected. Scroll for more, then import."
             }
         }
     }
@@ -109,20 +157,25 @@ class XFollowingImportActivity:Activity(){
             if(!scanning)return
             if(::browser.isInitialized){
                 val url=browser.url.orEmpty()
-                if(allowed(url) && Uri.parse(url).path.orEmpty()
-                        .trimEnd('/').endsWith("/following")){
+                val followingList=Uri.parse(url).path.orEmpty().matches(
+                    Regex("/[A-Za-z0-9_]{1,15}/following/?",RegexOption.IGNORE_CASE))
+                if(allowed(url) && followingList){
                     browser.evaluateJavascript(
                         """(function(){
-                            const found = new Set();
-                            document.querySelectorAll('[data-testid="UserCell"]').forEach(cell=>{
-                                cell.querySelectorAll('a[href]').forEach(a=>{
-                                    const m = a.getAttribute('href').match(/^\/([A-Za-z0-9_]{1,15})\/?$/);
-                                    if(m) found.add(m[1]);
+                            const found=new Set();
+                            const cells=document.querySelectorAll('[data-testid="UserCell"],[data-testid="user"],div[role="listitem"]');
+                            cells.forEach(cell=>{
+                                cell.querySelectorAll('[data-testid="User-Name"] a[href],a[href^="/"]').forEach(a=>{
+                                    const href=a.getAttribute('href')||'';
+                                    const m=href.match(/^\/([A-Za-z0-9_]{1,15})\/?$/);
+                                    if(m)found.add(m[1]);
                                 });
                             });
                             AsterionFollowing.found(JSON.stringify(Array.from(found)));
-                            window.scrollBy(0,Math.max(200,Math.floor(window.innerHeight*0.60)));
+                            if(cells.length>0)window.scrollBy(0,Math.max(180,Math.floor(window.innerHeight*0.5)));
                         })()""",null)
+                }else if(allowed(url) && Uri.parse(url).path.orEmpty().trimEnd('/')=="/home") {
+                    label.text="Following timeline is not the account list. Use OPEN MY FOLLOWING ACCOUNT LIST."
                 }
             }
             handler.postDelayed(this,1500L)

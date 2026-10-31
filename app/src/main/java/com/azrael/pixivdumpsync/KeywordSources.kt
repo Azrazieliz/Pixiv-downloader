@@ -28,23 +28,39 @@ object KeywordSources {
         "html|https://xhamster.com/search/{query}|xHamster",
         "html|https://www.dailymotion.com/search/{query}/videos|Dailymotion",
         "html|https://www.youtube.com/results?search_query={query}|YouTube",
-        "html|https://hianime.ba/search?keyword={query}|HiAnime Alternative"
+        "html|https://www.xnxx.com/search/{query}|XNXX",
+        "html|https://www.eporner.com/search/{query}/|Eporner",
+        "html|https://spankbang.com/s/{query}/|SpankBang",
+        "html|https://www.redtube.com/?search={query}|RedTube"
     )
     private fun isOldBrowser(line:String)=
         line.contains("www.bing.com/videos/search",true) ||
         line.contains("search.brave.com/search",true)
     fun sources(context:Context):String {
-        val configured=preferences(context).getString("providers",null)
-        if(configured!=null)return configured
-        val legacy=endpoint(context)
-        return if(legacy.isNotBlank()) "searxng|$legacy" else builtInSites.joinToString("\n")
+        // Search does not depend on choosing or configuring a search provider.
+        return builtInSites.joinToString("\n")
     }
     private fun searchProviders(context:Context):List<SearchProvider> {
-        val saved=SearchRanking.parseProviders(sources(context)).filterNot{
-            isOldBrowser(it.url)
-        }
         val direct=SearchRanking.parseProviders(builtInSites.joinToString("\n"))
-        return (direct+saved).distinctBy{it.url}.take(30)
+        // Automatically include user-saved video sources when their host has an
+        // actual search endpoint we know how to parse. No user-facing providers.
+        val dynamic=runCatching { com.asterion.videoflow.VideoDb(context).use { db->
+            db.listWatches().filter{it.enabled}.mapNotNull { watch->
+                val host=runCatching{URI(watch.address).host.orEmpty().lowercase()}
+                    .getOrDefault("").removePrefix("www.")
+                val url=when {
+                    host=="pornhub.com" -> "https://www.pornhub.com/video/search?search={query}"
+                    host=="xvideos.com" -> "https://www.xvideos.com/?k={query}"
+                    host=="xhamster.com" -> "https://xhamster.com/search/{query}"
+                    host=="youtube.com" || host=="m.youtube.com" ->
+                        "https://www.youtube.com/results?search_query={query}"
+                    host=="dailymotion.com" -> "https://www.dailymotion.com/search/{query}/videos"
+                    else->null
+                }
+                url?.let { SearchProvider(SearchProviderKind.HTML,it,watch.label) }
+            }
+        }}.getOrDefault(emptyList())
+        return (direct+dynamic).distinctBy{it.url}
     }
     fun setSources(context:Context,lines:String){
         SearchRanking.parseProviders(lines) // Reject invalid values before persistence.
@@ -84,7 +100,7 @@ object KeywordSources {
         for(i in 0 until minOf(found.length(),250)){
             val row=found.optJSONObject(i)?:continue
             val url=row.optString("url")
-            if(!SearchRanking.validUrl(url))continue
+            if(!SearchRanking.validUrl(url) || !SearchRanking.isVideoUrl(url))continue
             val title=row.optString("title",url).take(220)
             val snippet=row.optString("content").take(500)
             results.add(RankedHit(title,url,provider.label,snippet))
@@ -100,13 +116,16 @@ object KeywordSources {
             ".thumb-block a[href], [class*=video-thumb] a[href], "+
             "[class*=video-card] a[href], [class*=thumb] a[href], "+
             "[class*=video] a[href], article a[href], a[href]"
-        for(node in doc.select(selectors).take(2000)){
+        for(node in doc.select(selectors).take(5000)){
             if(node.closest("header,footer,nav,aside,.menu,.sidebar,.navigation")!=null)continue
             val absolute=runCatching{
                 URI(doc.location()).resolve(node.attr("href")).toString()
             }.getOrNull()?:continue
             if(!SearchRanking.validUrl(absolute) ||
                 !SearchRanking.isVideoUrl(absolute))continue
+            val resultHost=runCatching{URI(absolute).host.orEmpty().removePrefix("www.")}.getOrDefault("")
+            val searchHost=URI(url).host.orEmpty().removePrefix("www.")
+            if(resultHost!=searchHost && !resultHost.endsWith("."+searchHost))continue
             val container=node.closest(
                 "li.pcVideoListItem, .videoBox, .thumb-block, "+
                 "[class*=video-thumb], [class*=video-card], article, "+
@@ -132,7 +151,7 @@ object KeywordSources {
             }?.takeIf{SearchRanking.validUrl(it)}
             found.add(RankedHit(title,absolute,provider.label,description,
                 thumbnail=thumb))
-            if(found.size>=250)break
+            if(found.size>=500)break
         }
         return found
     }
@@ -162,7 +181,7 @@ object KeywordSources {
             // Execute independent providers concurrently. A broken site cannot hold
             // the whole search queue hostage.
             val deadline=System.nanoTime()+
-                java.util.concurrent.TimeUnit.SECONDS.toNanos(35)
+                java.util.concurrent.TimeUnit.SECONDS.toNanos(90)
             var finished=0
             while(finished<providers.size){
                 val remaining=deadline-System.nanoTime()

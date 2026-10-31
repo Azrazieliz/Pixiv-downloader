@@ -27,7 +27,7 @@ class AsterionHomeActivity:Activity(){
     private lateinit var body:LinearLayout
     private lateinit var scroller:ScrollView
     private var page="Home"
-    private val pages=listOf("Home","Queue","Library")
+    private val pages=listOf("Home","X","Videos")
     private val navButtons=linkedMapOf<String,TextView>()
     private fun dp(v:Int)=theme.px(this,v)
     private fun text(v:String,size:Float=14f,tint:Int=theme.white,bold:Boolean=false)=
@@ -52,6 +52,7 @@ class AsterionHomeActivity:Activity(){
         super.onCreate(savedInstanceState)
         window.statusBarColor=theme.background
         window.navigationBarColor=theme.background
+        GalleryDb(this).use{it.seedCatalogOnce(this)}
         ChapterRecovery.ensure(this)
         XPhotoScheduler.ensure(this)
         root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(theme.background)}
@@ -80,7 +81,7 @@ class AsterionHomeActivity:Activity(){
         root.addView(scroller,LinearLayout.LayoutParams(-1,0,1f))
         val tabs=theme.row(this).apply{setPadding(dp(5),dp(7),dp(5),dp(7));setBackgroundColor(theme.surface)}
         pages.forEach{tab->
-            val title=when(tab){"Home"->"SOURCES";"Queue"->"DOWNLOADS";else->"FILES"}
+            val title=when(tab){"Home"->"SOURCES";"X"->"X ACCOUNTS";else->"VIDEOS"}
             val t=text(title,14f,if(tab==page)theme.primary else theme.secondary,tab==page).apply{
                 gravity=Gravity.CENTER;minHeight=dp(50)
                 isClickable=true;isFocusable=true
@@ -122,6 +123,22 @@ class AsterionHomeActivity:Activity(){
             view.setTypeface(null,if(tab==page)android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
         }
         body.removeAllViews()
+        val power = Switch(this).apply {
+            text=if(AppPower.enabled(this@AsterionHomeActivity))
+                "APP ON · Downloads and background sync enabled"
+                else "APP OFF · All downloads and scheduled sync suspended"
+            textSize=13f
+            setTextColor(theme.white)
+            isChecked=AppPower.enabled(this@AsterionHomeActivity)
+            setOnCheckedChangeListener{_,turnOn->
+                AppPower.set(this@AsterionHomeActivity,turnOn)
+                render()
+            }
+        }
+        put(body,power,4)
+        if(!AppPower.enabled(this)){
+            put(body,text("OFF preserves all artists, credentials, archives and queued work. Re-enable to continue.",12f,theme.secondary),5)
+        }
         when(page){
             "Home"->renderHome()
             "Pixiv"->AsterionAccountPanels.pixiv(this,body){render()}
@@ -204,6 +221,24 @@ class AsterionHomeActivity:Activity(){
             sourceTile("Video Search","Direct sites · Videos & previews",
                 R.drawable.ic_source_video,theme.primary,"Videos")
         )
+        val all=card()
+        put(all,text("ALL ARTIST SYNC CONTROLS",13f,theme.secondary,true),0)
+        put(all,text("Enable or disable Pixiv, X and Kyora together. Site catalog entries start disabled until you choose them.",12f,theme.secondary))
+        val toggles=theme.row(this)
+        toggles.addView(button("ENABLE ALL"){
+            AppDb(this).use{it.setAllSelected(true);it.setAllLiveEnabled(true)}
+            XPhotoQueue(this).use{it.setAllEnabled(true)}
+            GalleryDb(this).use{it.setAllSelected(true);it.setAllLiveEnabled(true)}
+            toast("All saved artists and sources enabled");render()
+        },LinearLayout.LayoutParams(0,-2,1f))
+        toggles.addView(button("DISABLE ALL"){
+            AppDb(this).use{it.setAllSelected(false);it.setAllLiveEnabled(false)}
+            XPhotoQueue(this).use{it.setAllEnabled(false)}
+            GalleryDb(this).use{it.setAllSelected(false);it.setAllLiveEnabled(false)}
+            toast("All saved artists and sources disabled");render()
+        },LinearLayout.LayoutParams(0,-2,1f).apply{leftMargin=dp(8)})
+        put(all,toggles)
+        put(body,all,12)
         val counts=card()
         val pixivCount=AppDb(this).use{it.listArtists().size}
         val siteCount=GalleryDb(this).use{it.listEntities().size}
@@ -212,6 +247,7 @@ class AsterionHomeActivity:Activity(){
         put(counts,text("$pixivCount Pixiv artists  ·  $siteCount sites  ·  $xCount X accounts",
             14f,theme.white,true),5)
         put(body,counts,18)
+        put(body,button("TRANSFER STATUS AND RETRIES"){open("Queue")},8)
         val tools=card()
         put(tools,text("Other download tools",15f,theme.white,true),0)
         put(tools,text("Video links, keyword searches and optional external sources.",
@@ -583,24 +619,9 @@ class AsterionHomeActivity:Activity(){
         }
         put(body,tor)
         val prefs=getSharedPreferences("video_options",MODE_PRIVATE)
-        val searchConfig=card()
-        put(searchConfig,text("SEARCH PROVIDERS",14f,theme.white,true),0)
-        put(searchConfig,text("One per line: searxng|https://your-index.example or html|https://website.example/search?q={query}. Adult and alternative sites are eligible. A local SOCKS proxy is needed for .onion endpoints.",12f,theme.secondary))
-        val searchInput=edit("searxng|https://index.example")
-        searchInput.setSingleLine(false)
-        searchInput.minLines=4
-        searchInput.maxLines=8
-        searchInput.gravity=Gravity.TOP
-        searchInput.setText(KeywordSources.sources(this))
-        put(searchConfig,searchInput)
-        put(searchConfig,button("SAVE SEARCH PROVIDERS"){
-            val error=runCatching{
-                KeywordSources.setSources(this,searchInput.text.toString())
-            }.exceptionOrNull()
-            toast(if(error==null)"Search providers saved"
-                else "Source settings: ${error.message}")
-        })
-        put(body,searchConfig)
+        put(body,text("VIDEO DISCOVERY",16f,theme.white,true),11)
+        put(body,text("Search runs across integrated video sites and your saved video watches automatically. No search-provider setup is needed.",
+            12f,theme.secondary),6)
         put(body,button("MANAGE SAVED SEARCHES"){page="Sources";render()})
         val quality=card()
         put(quality,text("VIDEO QUALITY",14f,theme.white,true),0)

@@ -9,7 +9,11 @@ import android.content.Context
 
 object XPhotoScheduler {
     private const val ID=28914
+    fun cancel(context:Context){
+        context.getSystemService(JobScheduler::class.java).cancel(ID)
+    }
     fun ensure(context:Context){
+        if(!AppPower.enabled(context)){cancel(context);return}
         val scheduler=context.getSystemService(JobScheduler::class.java)
         if(scheduler.allPendingJobs.any{it.id==ID})return
         scheduler.schedule(JobInfo.Builder(ID,ComponentName(context,XPhotoJob::class.java))
@@ -19,6 +23,7 @@ object XPhotoScheduler {
 }
 class XPhotoJob:JobService(){
     override fun onStartJob(params:JobParameters?):Boolean {
+        if(!AppPower.enabled(this))return false
         if(!XPhotoQueue(this).use{it.sources().isNotEmpty()})return false
         // Android can block background foreground-service launches.
         if(runCatching{XPhotoEngine.start(this)}.isSuccess)return false

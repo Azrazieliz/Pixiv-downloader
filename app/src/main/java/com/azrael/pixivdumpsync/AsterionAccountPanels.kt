@@ -97,6 +97,12 @@ object AsterionAccountPanels {
             SessionStore.setAutoSync(a,it)
             if(it)Scheduler.ensure(a) else Scheduler.cancel(a)
         }
+        pair(a,account,"ENABLE ALL ARTISTS","DISABLE ALL ARTISTS",
+            {AppDb(a).use{it.setAllSelected(true);it.setAllLiveEnabled(true)};refresh()},
+            {AppDb(a).use{it.setAllSelected(false);it.setAllLiveEnabled(false)};refresh()})
+        pair(a,account,"ENABLE ALL PIXIV","DISABLE ALL PIXIV",
+            {AppDb(a).use{it.setAllSelected(true);it.setAllLiveEnabled(true)};refresh()},
+            {AppDb(a).use{it.setAllSelected(false);it.setAllLiveEnabled(false)};refresh()})
         pair(a,account,"SYNC NEW ART","BACKFILL ARTISTS",
             {pixivSync(a,SyncMode.LIVE)},{pixivSync(a,SyncMode.BACKFILL)})
         action(a,account,"NEW ARTWORK FROM FOLLOWING",false){
@@ -169,6 +175,12 @@ object AsterionAccountPanels {
             if(it)com.azrael.galleryflow.Scheduler.ensure(a)
             else com.azrael.galleryflow.Scheduler.cancel(a)
         }
+        pair(a,controls,"ENABLE ALL SITES","DISABLE ALL SITES",
+            {GalleryDb(a).use{it.setAllSelected(true);it.setAllLiveEnabled(true)};refresh()},
+            {GalleryDb(a).use{it.setAllSelected(false);it.setAllLiveEnabled(false)};refresh()})
+        pair(a,controls,"ENABLE ALL KYORA","DISABLE ALL KYORA",
+            {GalleryDb(a).use{it.setAllSelected(true);it.setAllLiveEnabled(true)};refresh()},
+            {GalleryDb(a).use{it.setAllSelected(false);it.setAllLiveEnabled(false)};refresh()})
         pair(a,controls,"SYNC NEW","BACKFILL ALL",
             {cosplaySync(a,GallerySyncMode.LIVE)},
             {cosplaySync(a,GallerySyncMode.BACKFILL)})
@@ -300,6 +312,12 @@ object AsterionAccountPanels {
                     }.show()
             }
         }
+        add(a,summary,ui.text(a,
+            "If X metadata requests fail, open an artist's media tab and capture visible photos.",
+            12f,ui.secondary))
+        pair(a,summary,"ENABLE ALL X","DISABLE ALL X",
+            {XPhotoQueue(a).use{it.setAllEnabled(true)};refresh()},
+            {XPhotoQueue(a).use{it.setAllEnabled(false)};refresh()})
         action(a,summary,"SYNC ALL X ACCOUNTS",true){
             XPhotoEngine.start(a);say(a,"Checking X photo accounts")
         }
@@ -352,6 +370,10 @@ object AsterionAccountPanels {
                     say(a,"Restarted image backfill for @"+source.handle)
                     refresh()
                 })
+            action(a,c,"OPEN X MEDIA & CAPTURE PHOTOS",false) {
+                a.startActivity(Intent(a,XMediaCaptureActivity::class.java)
+                    .putExtra(XMediaCaptureActivity.EXTRA_HANDLE,source.handle))
+            }
             pair(a,c,"RETRY ERRORS","REMOVE ARTIST",
                 {
                     XPhotoQueue(a).use{ db->

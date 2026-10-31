@@ -16,13 +16,18 @@ object Scheduling {
         context.getSharedPreferences("video_options",Context.MODE_PRIVATE).edit().putBoolean("auto",enabled).apply()
         val scheduler=context.getSystemService(JobScheduler::class.java)
         scheduler.cancel(ID)
-        if(enabled) scheduler.schedule(JobInfo.Builder(ID,ComponentName(context,PollJobService::class.java))
+        if(enabled && com.azrael.pixivdumpsync.AppPower.enabled(context))
+            scheduler.schedule(JobInfo.Builder(ID,ComponentName(context,PollJobService::class.java))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setPersisted(true)
             .setPeriodic(15*60*1000L)
             .setBackoffCriteria(60*1000L,JobInfo.BACKOFF_POLICY_EXPONENTIAL).build())
     }
+    fun cancel(context:Context){
+        context.getSystemService(JobScheduler::class.java).cancel(ID)
+    }
     fun ensure(context: Context) {
+        if(!com.azrael.pixivdumpsync.AppPower.enabled(context)){cancel(context);return}
         if(context.getSharedPreferences("video_options",Context.MODE_PRIVATE).getBoolean("auto",true)) {
             val scheduler=context.getSystemService(JobScheduler::class.java)
             if(scheduler.allPendingJobs.none { it.id==ID }) configure(context,true)
@@ -32,7 +37,8 @@ object Scheduling {
 class PollJobService: JobService() {
     private val exec=Executors.newSingleThreadExecutor()
     override fun onStartJob(params: JobParameters?): Boolean {
-        if(!getSharedPreferences("video_options",MODE_PRIVATE).getBoolean("auto",true)) return false
+        if(!com.azrael.pixivdumpsync.AppPower.enabled(this) ||
+            !getSharedPreferences("video_options",MODE_PRIVATE).getBoolean("auto",true)) return false
         if(VideoEngine.launch(applicationContext,true)) return false
         exec.submit {
             // JobScheduler can run this even when starting a foreground service is restricted.

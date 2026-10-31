@@ -53,6 +53,11 @@ class XPhotoQueue(context:Context):SQLiteOpenHelper(context,"asterion_x_photos.s
         }}
         return out
     }
+    fun setAllEnabled(enabled:Boolean){
+        writableDatabase.execSQL(
+            "UPDATE sources SET state=?,updated=?",
+            arrayOf(if(enabled)"queued" else "disabled",System.currentTimeMillis()))
+    }
     fun setEnabled(url:String,enabled:Boolean){
         writableDatabase.execSQL("UPDATE sources SET state=?,updated=? WHERE url=?",
             arrayOf(if(enabled)"queued" else "disabled",System.currentTimeMillis(),url))

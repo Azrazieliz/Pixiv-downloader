@@ -29,6 +29,7 @@ object VideoEngine {
             .setOngoing(true).setContentIntent(open).build()
     }
     fun launch(context: Context, scan: Boolean = false): Boolean {
+        if(!com.azrael.pixivdumpsync.AppPower.enabled(context))return false
         val intent=Intent(context,TransferService::class.java).putExtra("scan",scan)
         return try {
             if(Build.VERSION.SDK_INT>=26) context.startForegroundService(intent) else context.startService(intent)
@@ -38,6 +39,7 @@ object VideoEngine {
         }
     }
     fun work(context: Context, scan: Boolean, onStatus: (String)->Unit = {}) {
+        if(!com.azrael.pixivdumpsync.AppPower.enabled(context))return
         if(!busy.compareAndSet(false,true)) return
         try {
             val db=VideoDb(context)
@@ -72,7 +74,7 @@ object VideoEngine {
                     }
                 }
             }
-            while(true) {
+            while(com.azrael.pixivdumpsync.AppPower.enabled(context)) {
                 val next=db.next() ?: break
                 onStatus("Downloading ${next.title}")
                 db.update(next.id,"running")

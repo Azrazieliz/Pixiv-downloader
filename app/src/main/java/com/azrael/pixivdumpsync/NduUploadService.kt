@@ -25,7 +25,7 @@ class NduUploadService : Service() {
         @Volatile var currentStatus:String="Idle"
             private set
         fun launch(context:android.content.Context, backfill:Boolean=false) {
-            if (!NduSettings.configured(context)) return
+            if (!AppPower.enabled(context) || !NduSettings.configured(context)) return
             val i=Intent(context,NduUploadService::class.java)
                 .setAction(if(backfill) ACTION_QUEUE_EXISTING else ACTION_UPLOAD)
             context.startForegroundService(i)
@@ -42,6 +42,7 @@ class NduUploadService : Service() {
             stop=true;currentStatus="Upload stopping";running?.cancel(true)
             return START_NOT_STICKY
         }
+        if(!AppPower.enabled(this)){stopSelf();return START_NOT_STICKY}
         if(running?.isDone==false) return START_NOT_STICKY
         stop=false
         startForeground(ID,notification("Preparing direct TeraBox uploads"))
@@ -54,7 +55,7 @@ class NduUploadService : Service() {
                     NduCloudQueue(this).use { it.enqueueExisting(this) }
                 }
                 val outcome=NduUploadEngine.drain(this,20000,12*60_000L,
-                    stop={stop || Thread.currentThread().isInterrupted}) { status ->
+                    stop={stop || !AppPower.enabled(this) || Thread.currentThread().isInterrupted}) { status ->
                     currentStatus=status
                     notifyNow()
                 }

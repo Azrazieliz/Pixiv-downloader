@@ -48,6 +48,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = NocturneDesign.background
         window.navigationBarColor = NocturneDesign.background
+        GalleryDb(this).use{it.seedCatalogOnce(this)}
         siteFilter = intent.getStringExtra(EXTRA_SITE_ID)
         setContentView(buildUi())
         if (intent.getBooleanExtra(EXTRA_ADD_SITE, false)) {
@@ -165,7 +166,7 @@ class MainActivity : Activity() {
     }
 
     private fun heading(title: String, description: String) {
-        panel.addView(ui.eyebrow(this@MainActivity, "NOCTURNE COLLECTION"))
+        panel.addView(ui.eyebrow(this@MainActivity, "ASTERION / KYORA"))
         panel.addView(ui.text(this@MainActivity, title, 30f, ui.white, true), ui.lp(this@MainActivity, 5))
         panel.addView(ui.text(this@MainActivity, description, 13f, ui.secondary),
             ui.lp(this@MainActivity, 3, 22))
@@ -209,7 +210,7 @@ class MainActivity : Activity() {
             return
         }
         siteFilter = null
-        heading("Kyora library", "Cosplay sites and galleries that you choose to add.")
+        heading("Kyora · Sites & galleries", "Original supported sites and your saved creators, managed together.")
         val hero = ui.card(this@MainActivity, 21).apply {
             background = ui.shape(this@MainActivity, ui.soft, 23)
             addView(ui.eyebrow(this@MainActivity, "CONNECTED SOURCES"))
@@ -223,6 +224,10 @@ class MainActivity : Activity() {
                 { go(Page.DISCOVER) }, { go(Page.TRANSFERS) }))
         }
         panel.addView(hero)
+        panel.addView(buttonPair("Enable all sources","Disable all sources",
+            { GalleryDb(this).use{it.setAllSelected(true);it.setAllLiveEnabled(true)}; renderCurrent() },
+            { GalleryDb(this).use{it.setAllSelected(false);it.setAllLiveEnabled(false)}; renderCurrent() }),
+            ui.lp(this,13))
         section("Saved websites", entities.size.toString() + " SOURCES")
         if (entities.isEmpty()) {
             panel.addView(message("Your library is empty",

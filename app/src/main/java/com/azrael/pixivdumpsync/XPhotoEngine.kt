@@ -18,19 +18,31 @@ object XPhotoEngine {
     private val executor=Executors.newSingleThreadExecutor()
     private const val CHANNEL="asterion_x_images"
     private fun json(url:String):JSONObject {
-        val response=Jsoup.connect(url).ignoreContentType(true).ignoreHttpErrors(true)
-            .timeout(30000).maxBodySize(12_000_000).execute()
-        val value=JSONObject(response.body())
-        // FxTwitter explicitly reports an empty media timeline with HTTP 404
-        // and {"results":[], "cursor":...}. This is not a network error.
-        val emptyTimeline=response.statusCode()==404 &&
-            value.optJSONArray("results")!=null
-        require(response.statusCode() in 200..299 || emptyTimeline){
-            "X media metadata HTTP ${response.statusCode()}"}
-        require(value.optInt("code",200) in 200..299 || emptyTimeline) {
-            value.optString("message","X media API unavailable")
+        var last:Exception?=null
+        repeat(3){attempt->
+            try{
+                val response=Jsoup.connect(url).ignoreContentType(true).ignoreHttpErrors(true)
+                    .userAgent("Mozilla/5.0 (Linux; Android 17; Mobile) AppleWebKit/537.36")
+                    .header("Accept","application/json")
+                    .timeout(30000).maxBodySize(12_000_000).execute()
+                val value=runCatching{JSONObject(response.body())}.getOrNull()
+                val status=response.statusCode()
+                val code=value?.optInt("code",status)?:status
+                if(status==404 && value?.optJSONArray("results")!=null)return value
+                if(status in 200..299 && code in 200..299 &&
+                    value!=null)return value
+                val error=IllegalStateException("X metadata upstream HTTP $status / code $code")
+                if(status !in setOf(408,429,500,502,503,504) &&
+                    code !in setOf(429,500,502,503,504))throw error
+                last=error
+            }catch(t:Exception){
+                last=t
+                if(t is IllegalStateException &&
+                    !t.message.orEmpty().contains("upstream HTTP"))throw t
+            }
+            if(attempt<2)Thread.sleep(750L*(attempt+1))
         }
-        return value
+        throw last?:IllegalStateException("X metadata service unavailable")
     }
     private fun enqueuePhotos(db:XPhotoQueue,source:String,entry:JSONObject):Int {
         val photos=entry.optJSONObject("media")?.optJSONArray("photos")?:return 0
@@ -59,7 +71,19 @@ object XPhotoEngine {
             val target="https://api.fxtwitter.com/2/profile/$handle/media?count=100"+
                 (if(cursor.isNullOrBlank())"" else
                     "&cursor="+URLEncoder.encode(cursor,"UTF-8"))
-            return json(target)
+            // FxEmbed /media may return upstream HTTP 500 intermittently.
+            // Its documented /statuses timeline has the same results/cursor format,
+            // and enqueuePhotos filters entries to photos only.
+            return try { json(target) } catch(mediaError:Exception) {
+                val fallback="https://api.fxtwitter.com/2/profile/$handle/statuses?count=100"+
+                    (if(cursor.isNullOrBlank())"" else
+                        "&cursor="+URLEncoder.encode(cursor,"UTF-8"))
+                try { json(fallback) } catch(other:Exception) {
+                    throw IllegalStateException(
+                        "X media and timeline both failed: "+mediaError.message+
+                        " | "+other.message,other)
+                }
+            }
         }
         // Always examine the newest posts first. The saved cursor is exclusively
         // the older-content backfill position and must not suppress live sync.
@@ -101,21 +125,24 @@ object XPhotoEngine {
             .setOngoing(true).build()
     }
     fun start(context:Context) {
+        if(!AppPower.enabled(context))return
         val intent=Intent(context,XPhotoService::class.java)
         if(Build.VERSION.SDK_INT>=26)context.startForegroundService(intent)
         else context.startService(intent)
     }
     fun submit(context:Context,onStatus:(String)->Unit={})=executor.submit{
+        if(!AppPower.enabled(context))return@submit
         if(!working.compareAndSet(false,true))return@submit
         try{
             XPhotoQueue(context).use{db->
                 db.recover()
                 for((source,handle,cursor) in db.sources()) {
+                    if(!AppPower.enabled(context))break
                     onStatus("Scanning X images @${handle}")
                     runCatching{scan(db,source,handle,cursor)}
                         .onFailure{db.cursor(source,handle,cursor,it.message)}
                 }
-                while(true){
+                while(AppPower.enabled(context)){
                     val photo=db.next()?:break
                     db.change(photo.id,"running")
                     try{
@@ -175,7 +202,8 @@ object XPhotoEngine {
                                 output.write(buffer,0,n);bytes+=n}
                         }
                     }
-                    require(bytes>128){"X image truncated"}
+                    require(bytes>128 && (connection.contentLengthLong<=0 ||
+                        bytes==connection.contentLengthLong)){"X image truncated"}
                     context.contentResolver.update(dest,ContentValues().apply{
                         put(MediaStore.Downloads.IS_PENDING,0)},null,null)
                     return dest.toString()

@@ -47,7 +47,6 @@ object SearchRanking {
                 ?.takeIf(String::isNotBlank)?:URI(checked).host.orEmpty()
             parsed.add(SearchProvider(kind,address,label))
         }
-        require(parsed.size<=30){"Limit the configuration to 30 search sources"}
         return parsed.distinctBy{it.kind to it.url}
     }
     fun canonicalKey(raw:String):String { return try {
@@ -68,6 +67,9 @@ object SearchRanking {
         val path=uri.path.orEmpty().lowercase(Locale.ROOT)
         val host=uri.host.orEmpty().lowercase(Locale.ROOT)
         val query=uri.query.orEmpty().lowercase(Locale.ROOT)
+        if(listOf("reverso.net","reverso.com","wiktionary.org","wordreference.com",
+                "dictionary.com","linguee.com","deepl.com","thesaurus.com")
+                .any{host==it||host.endsWith("."+it)})return false
         if(path.matches(Regex("(?i).*/(?:search|category|categories|tag|tags|user|users|channel|channels|playlist|playlists)(?:/.*)?$")))return false
         if(host.contains("xvideos.com") && Regex("^/video(?:[._0-9]|/)").containsMatchIn(path))return true
         if(host.contains("pornhub.com") && path=="/view_video.php")

@@ -19,6 +19,7 @@ object ChapterArchives {
     private val busy=AtomicBoolean(false)
     private const val CHANNEL="asterion_chapter_transfers"
     fun start(context:Context){
+        if(!AppPower.enabled(context))return
         val intent=Intent(context,ChapterArchiveService::class.java)
         if(Build.VERSION.SDK_INT>=26)context.startForegroundService(intent)
         else context.startService(intent)
@@ -36,11 +37,12 @@ object ChapterArchives {
             .setContentIntent(open).setOngoing(true).build()
     }
     fun run(context:Context,onStatus:(String)->Unit)=executor.submit{
+        if(!AppPower.enabled(context))return@submit
         if(!busy.compareAndSet(false,true))return@submit
         try{
             ChapterQueue(context).use{db->
                 db.recover()
-                while(true){
+                while(AppPower.enabled(context)){
                     val job=db.next()?:break
                     db.attempt(job.id)
                     db.update(job.id,"working",job.progress)
