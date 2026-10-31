@@ -46,6 +46,17 @@ class ChapterScraperTest {
         assertTrue(ChapterScraper.isSingleChapter(
             "https://www.mangaread.org/manga/reader/chapter-1/"))
     }
+    @Test fun browserSnapshotKeepsOriginalReaderImageOrder(){
+        val html="""<html><body><a href="/serie/book/chapter-3/">Chapter 3</a>
+            <div id="reader">
+              <img class="page" src="https://cdn.example.com/chapters/p1.jpg"/>
+              <img class="page" data-src="https://cdn.example.com/chapters/p2.webp" src="loading.gif"/>
+            </div></body></html>"""
+        val doc=Jsoup.parse(html,"https://toonily.com/serie/book/chapter-3/")
+        assertEquals(listOf("https://cdn.example.com/chapters/p1.jpg",
+            "https://cdn.example.com/chapters/p2.webp"),
+            ChapterScraper.parsePageImages(doc))
+    }
     @Test fun mangaReadSeriesGetsComicsRouting(){
         assertEquals(DownloadKind.COMIC,SourceRouter.classify(
             "https://www.mangaread.org/manga/reader/"))

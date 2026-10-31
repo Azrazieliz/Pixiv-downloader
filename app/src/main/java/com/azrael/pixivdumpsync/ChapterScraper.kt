@@ -11,6 +11,8 @@ data class ChapterLink(val url:String,val title:String)
 
 /** Chapter lists and readers: preserve chapter numbers, fractions and original page order. */
 object ChapterScraper {
+    // Avoid repeating a guaranteed-to-fail non-browser request for every chapter.
+    private val browserOnlyUntil=java.util.concurrent.ConcurrentHashMap<String,Long>()
     private val chapterNumber=Regex(
         "(?i)(?:chapter|chapitre|episode|ch[.-]?|ep[.-]?)[\\s_/-]*(\\d+(?:[._]\\d+)?)"
     )
@@ -33,6 +35,10 @@ object ChapterScraper {
         val agent=context?.let{runCatching{WebSettings.getDefaultUserAgent(it)}
             .getOrNull()}?.takeIf{it.isNotBlank()}
             ?: "Mozilla/5.0 (Linux; Android 17; Mobile) AppleWebKit/537.36 Chrome/131.0"
+        val host=URI(url).host.orEmpty().lowercase().removePrefix("www.")
+        val session=context!=null && com.azrael.galleryflow.SiteSession.bound(context,url)
+        if(session && (browserOnlyUntil[host]?:0L)>System.currentTimeMillis())
+            return Jsoup.parse(BrowserPageFetch.html(requireNotNull(context),url),url)
         val connection=Jsoup.connect(url)
             .userAgent(agent)
             .header("Accept","text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -42,17 +48,27 @@ object ChapterScraper {
         com.azrael.galleryflow.SiteSession.cookie(url)?.let { requestCookie ->
             connection.header("Cookie", requestCookie)
         }
-        val result=connection.execute()
+        val result=try { connection.execute() }catch(network:Exception){
+            if(session){
+                browserOnlyUntil[host]=System.currentTimeMillis()+600_000L
+                return Jsoup.parse(BrowserPageFetch.html(requireNotNull(context),url),url)
+            }
+            throw network
+        }
         val doc=result.parse()
-        require(result.statusCode() in 200..299 &&
+        val accessible=result.statusCode() in 200..299 &&
             !doc.title().contains("Just a moment",true) &&
             !doc.title().contains("Attention required",true) &&
-            !doc.text().contains("Enable JavaScript and cookies to continue",true)){
-            if(result.statusCode()==403 || doc.title().contains("Just a moment",true))
-                "This website requires a browser verification challenge; chapter images cannot be accessed yet (HTTP ${result.statusCode()})."
-            else "Series page returned HTTP ${result.statusCode()}"
+            !doc.text().contains("Enable JavaScript and cookies to continue",true)
+        if(accessible)return doc
+        if(session){
+            browserOnlyUntil[host]=System.currentTimeMillis()+600_000L
+            return Jsoup.parse(BrowserPageFetch.html(requireNotNull(context),url),url)
         }
-        return doc
+        if(result.statusCode()==403||doc.title().contains("Just a moment",true))
+            throw IllegalStateException("Browser verification required (HTTP "+
+                result.statusCode()+"). Open source browser and save a valid session.")
+        throw IllegalStateException("Series page returned HTTP "+result.statusCode())
     }
     private fun allowed(raw:String):Boolean=SearchRanking.validUrl(raw)
     private fun clean(u:String):String=u.substringBefore('#').trimEnd('/')+"/"

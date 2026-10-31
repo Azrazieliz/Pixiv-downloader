@@ -1,9 +1,8 @@
 name: Transfer tested APK for original-key signing
 
 on:
-  push:
-    branches: ["feature/asterion-unified-downloads-20261030"]
-    paths: [".github/workflows/ci-unsigned-transfer.yml"]
+  # Manual trigger only: unsigned CI transfer is never a release or installation.
+  workflow_dispatch:
 
 permissions:
   contents: write

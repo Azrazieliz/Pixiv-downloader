@@ -36,10 +36,9 @@ object SiteSession {
         val key=host(url)
         if(!context.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
             .getBoolean(key,false))return false
-        val stored=cookie(url)?:return false
         return if(key=="x.com"||key=="twitter.com")
-            stored.split(';').any{it.trim().startsWith("auth_token=")}
-        else stored.isNotBlank()
+            cookie(url)?.split(';')?.any{it.trim().startsWith("auth_token=")}==true
+        else true // Accessible browser session saved; cookies are optional.
     }
     fun save(context:Context,url:String){
         require(validLoginUrl(url))
@@ -92,20 +91,39 @@ class SiteLoginActivity:Activity() {
             if(web.canGoBack())web.goBack() else finish()
         },LinearLayout.LayoutParams(0,-2,1f))
         actions.addView(ui.action(this,"SAVE CONNECTION",true){
-            CookieManager.getInstance().flush()
-            val cookie=SiteSession.cookie(address)
             val xSite=Uri.parse(address).host.orEmpty().removePrefix("www.") in
                 setOf("x.com","twitter.com")
-            val authenticated=cookie!=null && (!xSite ||
-                cookie.split(';').any{it.trim().startsWith("auth_token=")})
-            if(authenticated)SiteSession.save(this,address)
-            Toast.makeText(this,if(authenticated)
-                "Account session saved on this device."
-                else "Sign-in not confirmed. Finish logging in before saving.",
-                Toast.LENGTH_LONG).show()
-            setResult(if(authenticated)RESULT_OK else RESULT_CANCELED,
-                Intent().putExtra(EXTRA_URL,address))
-            finish()
+            web.evaluateJavascript("""(function(){
+                const title=document.title||'';
+                const body=(document.body?.innerText||'').slice(0,800);
+                const good=document.readyState==='complete' &&
+                    !/just a moment|attention required|verify you are human|enable javascript and cookies/i.test(title+' '+body);
+                return JSON.stringify({good:good,host:location.hostname});
+            })()"""){value->
+                val info=runCatching {
+                    org.json.JSONObject(org.json.JSONTokener(value).nextValue() as String)
+                }.getOrNull()
+                val currentHost=info?.optString("host").orEmpty()
+                    .lowercase(java.util.Locale.ROOT).removePrefix("www.")
+                val expectedHost=Uri.parse(address).host.orEmpty()
+                    .lowercase(java.util.Locale.ROOT).removePrefix("www.")
+                val pageOk=info?.optBoolean("good")==true && currentHost==expectedHost
+                val authenticated=pageOk && (!xSite ||
+                    SiteSession.cookie(address)?.split(';')?.any{
+                        it.trim().startsWith("auth_token=")}==true)
+                if(authenticated){
+                    CookieManager.getInstance().flush()
+                    SiteSession.save(this,address)
+                }
+                Toast.makeText(this,if(authenticated)
+                    "Accessible website session saved."
+                    else "Website verification is incomplete. Connection not saved.",
+                    Toast.LENGTH_LONG).show()
+                if(authenticated){
+                    setResult(RESULT_OK,Intent().putExtra(EXTRA_URL,address))
+                    finish()
+                }
+            }
         },LinearLayout.LayoutParams(0,-2,1f))
         actions.setPadding(ui.px(this,12),ui.px(this,8),ui.px(this,12),ui.px(this,8))
         shell.addView(actions)
