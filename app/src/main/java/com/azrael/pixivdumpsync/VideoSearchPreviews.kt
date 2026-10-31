@@ -12,7 +12,9 @@ import java.util.concurrent.Executors
 /** Bounded 3-thread video-result thumbnail loader; never blocks the UI. */
 object VideoSearchPreviews {
     private val workers=Executors.newFixedThreadPool(3)
-    private val memory=LruCache<String,Bitmap>(12*1024*1024).apply{}
+    private val memory=object:LruCache<String,Bitmap>(12*1024*1024){
+        override fun sizeOf(key:String,value:Bitmap):Int=value.byteCount
+    }
     private val lock=Any()
     fun display(a:Activity,image:ImageView,url:String?) {
         image.setImageResource(R.drawable.ic_source_video)
