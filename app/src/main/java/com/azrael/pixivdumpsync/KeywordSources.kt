@@ -112,14 +112,16 @@ object KeywordSources {
                 "[class*=video-thumb], [class*=video-card], article, "+
                 "[class*=thumb], [class*=video]")
             val image=(node.selectFirst("img")?:container?.selectFirst("img"))
-            val title=listOf(
-                node.attr("title"),node.attr("aria-label"),
+            val description=container?.text().orEmpty().take(500)
+            val titles=listOf(
                 container?.selectFirst("h3,h2,[class*=title]")?.text().orEmpty(),
+                node.attr("title"),node.attr("aria-label"),
                 image?.attr("alt").orEmpty(),node.text(),
                 container?.attr("title").orEmpty()
-            ).firstOrNull{it.trim().length>=5}.orEmpty().trim().take(220)
-            if(title.isBlank())continue
-            val description=container?.text().orEmpty().take(500)
+            ).map{it.trim().take(220)}.filter{it.length>=5}
+            val title=titles.maxByOrNull{
+                SearchRanking.relevance(keyword,it,description)
+            }?:continue
             if(SearchRanking.relevance(keyword,title,description)==0)continue
             val thumb=image?.let{img->
                 listOf("data-thumb","data-thumb_url","data-preview",
