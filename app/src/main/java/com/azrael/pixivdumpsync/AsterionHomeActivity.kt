@@ -367,7 +367,7 @@ class AsterionHomeActivity:Activity(){
 
         val byName=card()
         put(byName,text("Search videos by name",18f,theme.white,true),0)
-        put(byName,text("Choose a section of the internet. Search only sites in that category; no provider configuration.",
+        put(byName,text("Dedicated searches for hentai, porn, or public media indexes and configured hidden sites. Torrent entries open as source pages.",
             12f,theme.secondary))
         val searchPrefs=getSharedPreferences("asterion_video_search",MODE_PRIVATE)
         val query=edit("Creator, title or keywords")
@@ -375,16 +375,16 @@ class AsterionHomeActivity:Activity(){
         put(byName,query)
         put(byName,text("SEARCH AREA",12f,theme.secondary,true),9)
         val scopes=listOf(
-            "Adult + my sites" to VideoSearchArea.ALL,
-            "Adult sites" to VideoSearchArea.ADULT,
-            "My saved sites" to VideoSearchArea.SAVED
+            "Hentai" to VideoSearchArea.HENTAI,
+            "Porn" to VideoSearchArea.PORN,
+            "Piracy / Darkweb" to VideoSearchArea.PIRACY_DARKWEB
         )
-        val selectedArea=searchPrefs.getString("area","ADULT").orEmpty()
-            .takeIf{it in listOf("ALL","ADULT","SAVED")} ?: "ADULT"
+        val selectedArea=searchPrefs.getString("area","PORN").orEmpty()
+            .takeIf{it in listOf("HENTAI","PORN","PIRACY_DARKWEB")} ?: "PORN"
         if(selectedArea!=searchPrefs.getString("area",""))
             searchPrefs.edit().putString("area",selectedArea).apply()
         val activeArea=text("Selected: "+scopes.firstOrNull{it.second.name==selectedArea}
-            ?.first.orEmpty().ifBlank{"Adult sites"},12f,theme.primary)
+            ?.first.orEmpty().ifBlank{"Porn"},12f,theme.primary)
         put(byName,activeArea,3)
         for(group in scopes.chunked(3)){
             val r=theme.row(this)
@@ -408,17 +408,19 @@ class AsterionHomeActivity:Activity(){
         put(byName,theme.action(this,"SEARCH VIDEOS",true){
             val value=query.text.toString().trim()
             if(value.isBlank()){toast("Enter a name or keywords");return@action}
+            val area=runCatching{VideoSearchArea.valueOf(
+                searchPrefs.getString("area","PORN") ?: "PORN")}
+                .getOrDefault(VideoSearchArea.PORN)
+            val queryKey=area.name+":"+value
             searchPrefs.edit().putString("last_query",value)
                 .remove("last_error").apply()
             if(follow.isChecked)NameWatchDb(this).use{it.add(value)}
             toast("Searching your saved video sources…")
             Thread {
                 val outcome=runCatching{KeywordSources.searchDetailed(applicationContext,value,
-                    runCatching{VideoSearchArea.valueOf(
-                        searchPrefs.getString("area","ALL") ?: "ALL")}
-                        .getOrDefault(VideoSearchArea.ADULT))}
+                    area)}
                 outcome.onSuccess { result->
-                    SearchResultsDb(applicationContext).use{it.save(value,result.hits)}
+                    SearchResultsDb(applicationContext).use{it.save(queryKey,result.hits)}
                     val failures=result.failures.take(5).joinToString(" | ")
                     searchPrefs.edit().putString("last_error",failures).apply()
                     runOnUiThread{
@@ -434,8 +436,9 @@ class AsterionHomeActivity:Activity(){
         put(body,byName,12)
 
         val lastQuery=searchPrefs.getString("last_query","").orEmpty()
+        val queryKey=selectedArea+":"+lastQuery
         val hits=if(lastQuery.isBlank())emptyList() else
-            SearchResultsDb(this).use{it.listForQuery(lastQuery,60)}
+            SearchResultsDb(this).use{it.listForQuery(queryKey,60)}
         val sourceErrors=searchPrefs.getString("last_error","").orEmpty()
         if(lastQuery.isNotBlank()){
             section("Results for: "+lastQuery,
@@ -456,9 +459,15 @@ class AsterionHomeActivity:Activity(){
                 put(c,thumbnail,0)
                 VideoSearchPreviews.display(this,thumbnail,hit.thumbnail)
                 put(c,text(hit.title,16f,theme.white,true),8)
-                put(c,text(hit.source+" · Video result",12f,theme.primary))
+                val isIndex=SearchRanking.isIndexPage(hit.url)
+                put(c,text(hit.source+" · "+(if(isIndex)"Indexed source page" else "Video result"),
+                    12f,theme.primary))
                 put(c,text(hit.url.take(120),11f,theme.subdued))
-                if(!hit.queued){
+                if(isIndex){
+                    put(c,button("OPEN INDEXED SOURCE PAGE"){
+                        startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(hit.url)))
+                    })
+                }else if(!hit.queued){
                     put(c,button("DOWNLOAD THIS RESULT"){
                         val added=VideoDb(this).use{it.addVideo(hit.url,hit.title)}
                         if(added){

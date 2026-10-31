@@ -14,7 +14,7 @@ import java.net.URLEncoder
  * mirrors, and Tor-reachable sources. No preconfigured site-category blacklist.
  * Discovery is metadata-based; it does not bypass protected streams or DRM.
  */
-enum class VideoSearchArea { ALL, ADULT, SAVED }
+enum class VideoSearchArea { HENTAI, PORN, PIRACY_DARKWEB }
 
 object KeywordSources {
     private const val PREFS="asterion_keyword_sources"
@@ -24,7 +24,13 @@ object KeywordSources {
         preferences(context).edit().putString("searxng",address.trim()).apply()
     }
     /** Search video websites directly; never substitute a search-engine results page. */
-    private val builtInSites=listOf(
+    /** Separate actual search sources for each of the three requested categories. */
+    private val hentaiSites=listOf(
+        "html|https://hanime.tv/search?query={query}|Hanime",
+        "html|https://hentai.tv/?s={query}|HentaiTV",
+        "html|https://hentaihaven.xxx/?s={query}|HentaiHaven"
+    )
+    private val pornSites=listOf(
         "html|https://www.pornhub.com/video/search?search={query}|Pornhub",
         "html|https://www.xvideos.com/?k={query}|XVideos",
         "html|https://xhamster.com/search/{query}|xHamster",
@@ -33,36 +39,43 @@ object KeywordSources {
         "html|https://spankbang.com/s/{query}/|SpankBang",
         "html|https://www.redtube.com/?search={query}|RedTube"
     )
+    /** Indexed listings are not playable video files and open as source pages. */
+    private val clearnetIndexes=listOf(
+        "html|https://nyaa.si/?f=0&c=0_0&q={query}|Nyaa",
+        "html|https://1337x.to/search/{query}/1/|1337x"
+    )
+    internal fun siteDefinitions(area:VideoSearchArea)=when(area){
+        VideoSearchArea.HENTAI -> hentaiSites
+        VideoSearchArea.PORN -> pornSites
+        VideoSearchArea.PIRACY_DARKWEB -> clearnetIndexes
+    }
     private fun isOldBrowser(line:String)=
         line.contains("www.bing.com/videos/search",true) ||
         line.contains("search.brave.com/search",true)
     fun sources(context:Context):String {
         // Search does not depend on choosing or configuring a search provider.
-        return builtInSites.joinToString("\n")
+        return (hentaiSites+pornSites+clearnetIndexes).joinToString("\n")
     }
-    private fun searchProviders(context:Context):List<SearchProvider> {
-        val direct=SearchRanking.parseProviders(builtInSites.joinToString("\n"))
-        // Automatically include user-saved video sources when their host has an
-        // actual search endpoint we know how to parse. No user-facing providers.
-        val dynamic=runCatching { com.asterion.videoflow.VideoDb(context).use { db->
+    private fun searchProviders(context:Context,area:VideoSearchArea):List<SearchProvider> {
+        val direct=SearchRanking.parseProviders(siteDefinitions(area).joinToString("\n"))
+        if(area!=VideoSearchArea.PIRACY_DARKWEB)return direct
+        // Saved user-supplied search templates are included without a new
+        // provider settings screen. Hidden sites need an existing local proxy.
+        val torEnabled=context.getSharedPreferences("video_options",Context.MODE_PRIVATE)
+            .getBoolean("tor_proxy",false)
+        val saved=runCatching { com.asterion.videoflow.VideoDb(context).use { db->
             db.listWatches().filter{it.enabled}.mapNotNull { watch->
-                val host=runCatching{URI(watch.address).host.orEmpty().lowercase()}
-                    .getOrDefault("").removePrefix("www.")
-                val url=when {
-                    host=="pornhub.com" -> "https://www.pornhub.com/video/search?search={query}"
-                    host=="xvideos.com" -> "https://www.xvideos.com/?k={query}"
-                    host=="xhamster.com" -> "https://xhamster.com/search/{query}"
-                    host=="youtube.com" || host=="m.youtube.com" ->
-                        "https://www.youtube.com/results?search_query={query}"
-                    host=="dailymotion.com" -> "https://www.dailymotion.com/search/{query}/videos"
-                    else->null
-                }
-                url?.let { SearchProvider(SearchProviderKind.HTML,it,watch.label) }
+                val url=watch.address
+                val host=runCatching{URI(url.replace("{query}","test"))
+                    .host.orEmpty().lowercase()}.getOrDefault("")
+                if((!url.contains("{query}") && !url.contains("{name}")) ||
+                    (host.endsWith(".onion") && !torEnabled))null
+                else runCatching{
+                    SearchRanking.parseProviders("html|"+url+"|"+watch.label).first()
+                }.getOrNull()
             }
         }}.getOrDefault(emptyList())
-        // No hidden-network searches or unrequested mainstream catalogs.
-        // User-saved supported sites remain eligible even outside built-in sites.
-        return (direct+dynamic).distinctBy{it.url}
+        return (direct+saved).distinctBy{it.url}
     }
     fun setSources(context:Context,lines:String){
         SearchRanking.parseProviders(lines) // Reject invalid values before persistence.
@@ -109,7 +122,8 @@ object KeywordSources {
         }
         return results
     }
-    private fun html(context:Context,provider:SearchProvider,keyword:String):List<RankedHit> {
+    private fun html(context:Context,provider:SearchProvider,keyword:String,
+                     area:VideoSearchArea):List<RankedHit> {
         val encoded=URLEncoder.encode(keyword,"UTF-8")
         val url=provider.url.replace("{query}",encoded).replace("{name}",encoded)
         val doc=connection(context,url).get()
@@ -117,14 +131,17 @@ object KeywordSources {
         val selectors="li.pcVideoListItem a[href], .videoBox a[href], "+
             ".thumb-block a[href], [class*=video-thumb] a[href], "+
             "[class*=video-card] a[href], [class*=thumb] a[href], "+
-            "[class*=video] a[href], article a[href], a[href]"
+            "[class*=video] a[href], article a[href], "+
+            "table.torrent-list a[href], .coll-1 a[href], tr a[href], a[href]"
         for(node in doc.select(selectors).take(5000)){
             if(node.closest("header,footer,nav,aside,.menu,.sidebar,.navigation")!=null)continue
             val absolute=runCatching{
                 URI(doc.location()).resolve(node.attr("href")).toString()
             }.getOrNull()?:continue
             if(!SearchRanking.validUrl(absolute) ||
-                !SearchRanking.isVideoUrl(absolute))continue
+                !(SearchRanking.isVideoUrl(absolute) ||
+                    (area==VideoSearchArea.PIRACY_DARKWEB &&
+                        SearchRanking.isIndexPage(absolute))))continue
             val resultHost=runCatching{URI(absolute).host.orEmpty().removePrefix("www.")}.getOrDefault("")
             val searchHost=URI(url).host.orEmpty().removePrefix("www.")
             if(resultHost!=searchHost && !resultHost.endsWith("."+searchHost))continue
@@ -158,29 +175,11 @@ object KeywordSources {
         return found
     }
     fun searchDetailed(context:Context,keyword:String,
-                       area:VideoSearchArea=VideoSearchArea.ALL):SearchOutcome {
+                       area:VideoSearchArea=VideoSearchArea.PORN):SearchOutcome {
         require(keyword.trim().isNotBlank()){"Enter a search term"}
-        val adult=setOf("pornhub.com","xvideos.com","xhamster.com",
-            "xnxx.com","eporner.com","spankbang.com","redtube.com")
-        val savedHosts=runCatching{com.asterion.videoflow.VideoDb(context).use{db->
-            db.listWatches().filter{it.enabled}.mapNotNull { watch->
-                runCatching{URI(watch.address).host?.lowercase()?.removePrefix("www.")}
-                    .getOrNull()
-            }.toSet()
-        }}.getOrDefault(emptySet())
-        val providers=searchProviders(context).filter { provider->
-            val host=runCatching{
-                URI(provider.url.replace("{query}","x")).host.orEmpty()
-                    .lowercase().removePrefix("www.")
-            }.getOrDefault("")
-            when(area){
-                VideoSearchArea.ALL -> host in adult || host in savedHosts
-                VideoSearchArea.ADULT -> host in adult
-                VideoSearchArea.SAVED -> host in savedHosts
-            }
-        }
+        val providers=searchProviders(context,area)
         if(providers.isEmpty())return SearchOutcome(emptyList(),0,
-            listOf("No accessible video sites in this category. Save a supported video website and try again."))
+            listOf("No search sources for this area. Hidden services require a configured local Tor proxy."))
         val pool=java.util.concurrent.Executors.newFixedThreadPool(minOf(6,providers.size))
         val completion=java.util.concurrent.ExecutorCompletionService<
             Triple<String,List<RankedHit>,String?>>(pool)
@@ -191,7 +190,7 @@ object KeywordSources {
                 try {
                     val hits=when(provider.kind){
                         SearchProviderKind.SEARXNG->index(context,provider,keyword.trim())
-                        SearchProviderKind.HTML->html(context,provider,keyword.trim())
+                        SearchProviderKind.HTML->html(context,provider,keyword.trim(),area)
                     }
                     Triple(provider.label,hits,null)
                 }catch(t:Exception){
@@ -217,7 +216,10 @@ object KeywordSources {
             if(finished<providers.size)
                 errors.add("${providers.size-finished} search source(s) timed out")
         }finally{pool.shutdownNow()}
-        return SearchOutcome(SearchRanking.deduplicate(keyword,collected),
+        return SearchOutcome(
+            if(area==VideoSearchArea.PIRACY_DARKWEB)
+                SearchRanking.deduplicateIndex(keyword,collected)
+            else SearchRanking.deduplicate(keyword,collected),
             providers.size,errors)
     }
     /** Search one explicitly supplied site, including HTML sites with unusual page URLs. */
@@ -229,7 +231,7 @@ object KeywordSources {
         val provider=SearchProvider(SearchProviderKind.HTML,address,"Custom site")
         return try {
             SearchOutcome(SearchRanking.deduplicate(keyword,
-                html(context,provider,keyword)),1,emptyList())
+                html(context,provider,keyword,VideoSearchArea.PIRACY_DARKWEB)),1,emptyList())
         }catch(t:Exception) {
             SearchOutcome(emptyList(),1,listOf(
                 "Custom site: ${t.message?:t.javaClass.simpleName}"))

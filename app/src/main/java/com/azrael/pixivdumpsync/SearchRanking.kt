@@ -71,6 +71,10 @@ object SearchRanking {
                 "dictionary.com","linguee.com","deepl.com","thesaurus.com")
                 .any{host==it||host.endsWith("."+it)})return false
         if(path.matches(Regex("(?i).*/(?:search|category|categories|tag|tags|user|users|channel|channels|playlist|playlists)(?:/.*)?$")))return false
+        if(host=="hanime.tv" &&
+            (path.startsWith("/hentai-videos/") || path.startsWith("/hentai/")))return true
+        if(host=="hentaihaven.xxx" &&
+            (path.startsWith("/watch/") || path.startsWith("/video/")))return true
         if(host.contains("xvideos.com") && Regex("^/video(?:[._0-9]|/)").containsMatchIn(path))return true
         if(host.contains("pornhub.com") && path=="/view_video.php")
             return query.contains("viewkey=")
@@ -80,6 +84,29 @@ object SearchRanking {
         if(host.contains("vimeo.com")&&Regex("^/\\d+").containsMatchIn(path))return true
         return Regex("(?i)(/(?:watch|watch-video|watching|video|videos|view_video|viewkey|movie|movies|shorts|reel|reels|clip|clips|scene|scenes|embed|post|posts)(?:[/_-]|$)|\\.(?:mp4|webm|m3u8|mpd)$)")
             .containsMatchIn(path)
+    }
+    /** Torrent-index detail pages can be discovered, but cannot be queued as videos. */
+    fun isIndexPage(url:String):Boolean {
+        val uri=runCatching{URI(url)}.getOrNull()?:return false
+        val host=uri.host.orEmpty().lowercase(Locale.ROOT).removePrefix("www.")
+        val path=uri.path.orEmpty()
+        return (host=="nyaa.si" && Regex("^/view/\\d+/?$").matches(path)) ||
+            (host in setOf("1337x.to","1337x.st") &&
+                Regex("^/torrent/\\d+/[^/]+/?$").matches(path))
+    }
+    fun deduplicateIndex(query:String,hits:List<RankedHit>):List<RankedHit> {
+        val stored=linkedMapOf<String,RankedHit>()
+        for(hit in hits){
+            if(!validUrl(hit.url) ||
+                !(isVideoUrl(hit.url)||isIndexPage(hit.url)))continue
+            val score=relevance(query,hit.title,hit.description)
+            if(score==0)continue
+            val normalized=hit.copy(score=score)
+            val key=canonicalKey(hit.url)
+            if(stored[key]?.score?.let{it>=score}==true)continue
+            stored[key]=normalized
+        }
+        return stored.values.sortedByDescending{it.score}
     }
     /** Require most user terms in the title; descriptions cannot rescue junk titles. */
     fun relevance(query:String,title:String,description:String):Int {

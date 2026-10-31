@@ -12,6 +12,30 @@ class SearchRankingTest {
         assertEquals(3,list.size)
         assertEquals(SearchProviderKind.HTML,list[1].kind)
     }
+    @Test fun dedicatedThreeSearchCategoriesHaveDifferentActualSources(){
+        val categories=VideoSearchArea.values().toList()
+        assertEquals(listOf(VideoSearchArea.HENTAI,VideoSearchArea.PORN,
+            VideoSearchArea.PIRACY_DARKWEB),categories)
+        val hentai=KeywordSources.siteDefinitions(VideoSearchArea.HENTAI)
+        val porn=KeywordSources.siteDefinitions(VideoSearchArea.PORN)
+        val piracy=KeywordSources.siteDefinitions(VideoSearchArea.PIRACY_DARKWEB)
+        assertTrue(hentai.any{it.contains("hanime.tv")})
+        assertTrue(porn.any{it.contains("pornhub.com")})
+        assertTrue(piracy.any{it.contains("nyaa.si")})
+        assertTrue(hentai.none{it in porn || it in piracy})
+        assertTrue(porn.none{it in piracy})
+    }
+    @Test fun indexedMediaIsNeverMistakenForDownloadableVideo(){
+        val nyaa="https://nyaa.si/view/1917004"
+        val torrent="https://1337x.to/torrent/9123456/video-name/"
+        assertTrue(SearchRanking.isIndexPage(nyaa))
+        assertTrue(SearchRanking.isIndexPage(torrent))
+        assertFalse(SearchRanking.isVideoUrl(nyaa))
+        assertFalse(SearchRanking.isVideoUrl(torrent))
+        assertFalse(SearchRanking.isIndexPage("https://nyaa.si/?q=example"))
+        assertTrue(SearchRanking.isVideoUrl(
+            "https://hanime.tv/hentai-videos/example-title"))
+    }
     @Test fun rejectsInternalAddressesAndMalformedTemplates() {
         assertFalse(SearchRanking.validUrl("http://127.0.0.1/test"))
         assertFalse(SearchRanking.validUrl("http://localhost/test"))
