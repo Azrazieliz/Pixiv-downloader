@@ -152,6 +152,8 @@ class AsterionHomeActivity:Activity(){
             when(target){
                 "Pixiv"->startActivity(Intent(this@AsterionHomeActivity,MainActivity::class.java))
                 "Kyora"->startActivity(Intent(this@AsterionHomeActivity,com.azrael.galleryflow.MainActivity::class.java))
+                "Site"->startActivity(Intent(this@AsterionHomeActivity,com.azrael.galleryflow.MainActivity::class.java)
+                    .putExtra(com.azrael.galleryflow.MainActivity.EXTRA_ADD_SITE,true))
                 else->open(target)
             }
         }
