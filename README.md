@@ -22,3 +22,13 @@ Previous signed APK versions are retained in this artifact branch.
 `
 - CI verified; auto X-following traversal, scoped video search, MangaRead, Toonily browser-retry updates.
 - In-place APK update preserves installed Nocturne app data, and original Kuroha is separate.
+
+## v1.3.14-preview — 2026-10-31
+- Package `com.azrael.pixivdumpsync.nocturne`, version code 43.
+- Signer SHA-256: `9bc439712a0a460cc4703ebf254aaaf9bf3cc6e67b0ced6fc12162ed3ca3b9ad`.
+- APK SHA-256: `
+f6dcdbeb817cfb093997ad9cbb4a69a3dd71fd7ff4b50a5d1f1218ddcab7d5f0
+`.
+- Removes mainstream and Tor search, retains adult and saved-site discovery, adds use of already authenticated website sessions.
+- Does not bypass external paywalls.
+
